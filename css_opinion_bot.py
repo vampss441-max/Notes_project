@@ -364,12 +364,10 @@ with tab2:
         for item in st.session_state["notes"]:
            st.markdown(f"### {item['title']}")
            st.markdown(f"**Author:** {item['author']}")
-           st.text_area(
-            "Notes",
-            value=item["notes"],
-            height=400,
-            key=item["title"])
-            st.divider()
+           st.text_area("Notes",value=item["notes"],height=400,key=item["title"])
+           st.divider()
+
+        
          pdf_buffer = generate_pdf(st.session_state["notes"], font_theme)
          st.download_button(
             label="Download Professional PDF",
@@ -378,3 +376,4 @@ with tab2:
             mime="application/pdf"
 
         )
+
