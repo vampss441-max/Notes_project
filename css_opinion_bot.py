@@ -36,7 +36,7 @@ file_date = datetime.now().strftime("%d-%m-%Y")
 # CONFIG
 # =========================
 st.set_page_config(page_title="Daily Opinions' Notes", layout="wide")
-st.title("CSS AI Examiner + Dawn Opinion System")
+st.title("🗞Dawn Opinion System")
 
 # Load Groq API key safely
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -121,7 +121,7 @@ STRICT RULES:
 - Extract 5 relevant phrasal verbs from article
 - Provide very short explanation
 - Include 5 key vocabulary words with meanings
-- Provide 3–5 line summary of article
+- Provide 5-10 line summary of article
 - Add CSS linkage tags for relevant papers
 - Occasionally add short analytical linking sentences between sections.
 - Include one short "Examiner Insight" line where relevant.
@@ -355,11 +355,26 @@ with tab2:
                 st.session_state["notes"] = results
             st.success("Notes Generated")
 
+   
+# DISPLAY GENERATED NOTES
+# =========================
     if "notes" in st.session_state:
-        pdf_buffer = generate_pdf(st.session_state["notes"], font_theme)
-        st.download_button(
+        st.subheader("Generated CSS Notes")
+
+        for item in st.session_state["notes"]:
+           st.markdown(f"### {item['title']}")
+           st.markdown(f"**Author:** {item['author']}")
+           st.text_area(
+            "Notes",
+            value=item["notes"],
+            height=400,
+            key=item["title"])
+            st.divider()
+         pdf_buffer = generate_pdf(st.session_state["notes"], font_theme)
+         st.download_button(
             label="Download Professional PDF",
             data=pdf_buffer,
             file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
             mime="application/pdf"
+
         )
