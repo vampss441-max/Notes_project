@@ -355,22 +355,40 @@ with tab2:
                 st.session_state["notes"] = results
             st.success("Notes Generated")
 
-    # 👇 ADD THIS SECTION
-    if "notes" in st.session_state:
-        st.subheader("Generated CSS Notes")
-        for item in st.session_state["notes"]:
-            st.markdown(f"### {item['title']}")
-            st.markdown(f"**Author:** {item['author']}")
-            st.text_area("Notes", value=item["notes"], height=400, key=item["title"])
+    # =========================
+# PROFESSIONAL NOTES DISPLAY
+# =========================
+if "notes" in st.session_state:
+
+    st.subheader("📘 Generated CSS Academy Notes")
+
+    for i, item in enumerate(st.session_state["notes"]):
+
+        with st.expander(f"📰 {item['title']}  |  ✍️ {item['author']}", expanded=True):
+
+            formatted_notes = item["notes"]
+
+            # Convert bullet symbols for markdown
+            formatted_notes = formatted_notes.replace("* ", "- ")
+            formatted_notes = formatted_notes.replace("• ", "- ")
+
+            # Render nicely formatted markdown
+            st.markdown(formatted_notes)
+
+            # Copy button
+            st.code(item["notes"], language="markdown")
+
             st.divider()
 
-        pdf_buffer = generate_pdf(st.session_state["notes"], font_theme)
+    # PDF download still available
+    pdf_buffer = generate_pdf(st.session_state["notes"], font_theme)
 
-        st.download_button(
-            label="Download Professional PDF",
-            data=pdf_buffer,
-            file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
-            mime="application/pdf"
-        )
+    st.download_button(
+        label="📥 Download Professional PDF",
+        data=pdf_buffer,
+        file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
+        mime="application/pdf"
+    )
+
 
 
