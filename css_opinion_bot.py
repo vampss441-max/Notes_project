@@ -355,25 +355,22 @@ with tab2:
                 st.session_state["notes"] = results
             st.success("Notes Generated")
 
-   
-# DISPLAY GENERATED NOTES
-# =========================
+    # 👇 ADD THIS SECTION
     if "notes" in st.session_state:
         st.subheader("Generated CSS Notes")
-
         for item in st.session_state["notes"]:
-           st.markdown(f"### {item['title']}")
-           st.markdown(f"**Author:** {item['author']}")
-           st.text_area("Notes",value=item["notes"],height=400,key=item["title"])
-           st.divider()
+            st.markdown(f"### {item['title']}")
+            st.markdown(f"**Author:** {item['author']}")
+            st.text_area("Notes", value=item["notes"], height=400, key=item["title"])
+            st.divider()
 
-        
-         pdf_buffer = generate_pdf(st.session_state["notes"], font_theme)
-         st.download_button(
+        pdf_buffer = generate_pdf(st.session_state["notes"], font_theme)
+
+        st.download_button(
             label="Download Professional PDF",
             data=pdf_buffer,
             file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
             mime="application/pdf"
-
         )
+
 
