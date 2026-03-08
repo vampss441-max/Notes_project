@@ -20,6 +20,7 @@ import io
 import os
 import random
 from dotenv import load_dotenv
+from openai import OpenAI
 
 # =========================
 # LOAD .ENV
@@ -38,12 +39,16 @@ file_date = datetime.now().strftime("%d-%m-%Y")
 st.set_page_config(page_title="Daily Opinions' Notes", layout="wide")
 st.title("🗞Dawn Opinion System")
 
-# Load Groq API key safely
+# Load API keys safely
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-if not GROQ_API_KEY:
-    st.error("Groq API key is not set! Please set GROQ_API_KEY in your environment.")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not GROQ_API_KEY or not OPENAI_API_KEY:
+    st.error("API keys not set! Please set GROQ_API_KEY and OPENAI_API_KEY in your environment.")
     st.stop()
+
 client = Groq(api_key=GROQ_API_KEY)
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
+
 FAST_MODEL = "llama-3.1-8b-instant"
 
 # =========================
@@ -57,7 +62,7 @@ def scrape_opinions():
     articles = []
     list_items = soup.find_all("h2", class_="story__title")
 
-    for link_tag in list_items[:6]:  # Adjust number if needed
+    for link_tag in list_items[:6]:
         title = link_tag.text.strip()
         article_url = link_tag.find("a")["href"]
 
@@ -79,13 +84,12 @@ def scrape_opinions():
             "content": content,
             "author": author
         })
-
-        time.sleep(0.1)  # Reduced sleep for faster fetching
+        time.sleep(0.1)
 
     return articles
 
 # =========================
-# RANDOM ANALYTICAL SENTENCES (Bonus)
+# RANDOM ANALYTICAL SENTENCES
 # =========================
 ANALYTICAL_SENTENCES = [
     "Understanding this debate requires examining the broader geopolitical context.",
@@ -99,12 +103,10 @@ ANALYTICAL_SENTENCES = [
 # CSS NOTES GENERATION
 # =========================
 def generate_css_notes(article, mode):
-
     structure = "Use short analytical paragraph followed by structured bullet points." \
         if mode=="Bullet Dominant Hybrid" \
         else "Use paragraph-dominant analysis with limited structured bullets."
 
-    # Full enhanced prompt including examiner insights and human-style improvements
     prompt = f"""
 You are a senior FPSC CSS examiner.
 
@@ -147,26 +149,34 @@ Random analytical sentence bank (choose 1-2 lines randomly to insert between sec
 Article:
 {article['content'][:5000]}
 """
-
     response = client.chat.completions.create(
         model=FAST_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3
     )
-
     notes_text = response.choices[0].message.content
-
-    # Remove unnecessary AI-style phrasal verb notes
     cleaned_notes = "\n".join([line for line in notes_text.split("\n")
                                if "Note: the phrasal verbs" not in line])
     return cleaned_notes
+
+# =========================
+# IMAGE GENERATION
+# =========================
+def generate_image(article_title):
+    prompt = f"Create a digital illustration for the following article: {article_title}"
+    response = openai_client.images.generate(
+        model="gpt-image-1",
+        prompt=prompt,
+        size="1024x1024"
+    )
+    img_url = response.data[0].url
+    return img_url
 
 # =========================
 # FOOTER
 # =========================
 def add_footer(canvas_obj, doc):
     width, height = A4
-
     if os.path.exists("logo.png"):
         canvas_obj.saveState()
         canvas_obj.setFillAlpha(0.06)
@@ -187,20 +197,29 @@ def add_footer(canvas_obj, doc):
     canvas_obj.drawRightString(width - 50, 20, f"Page {doc.page}")
 
 # =========================
-# DYNAMIC PDF WITH TOC
+# PDF GENERATION WITH REAL TOC
 # =========================
-from reportlab.pdfgen.canvas import Canvas
+from reportlab.pdfgen import canvas as pdf_canvas
 
-class NumberedCanvas(Canvas):
+class NumberedCanvas(pdf_canvas.Canvas):
     def __init__(self, *args, **kwargs):
-        Canvas.__init__(self, *args, **kwargs)
-        self._article_pages = {}
+        pdf_canvas.Canvas.__init__(self, *args, **kwargs)
+        self._saved_page_states = []
 
     def showPage(self):
-        Canvas.showPage(self)
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
 
     def save(self):
-        Canvas.save(self)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_page_number()
+            pdf_canvas.Canvas.showPage(self)
+        pdf_canvas.Canvas.save(self)
+
+    def draw_page_number(self):
+        self.setFont("Times-Roman", 9)
+        self.drawRightString(A4[0]-50, 20, f"Page {self._pageNumber}")
 
 def generate_pdf(notes_data, font_theme):
     buffer = io.BytesIO()
@@ -239,9 +258,7 @@ def generate_pdf(notes_data, font_theme):
         leftIndent=0, rightIndent=0, spaceBefore=4, spaceAfter=4
     )
 
-    # =========================
     # COVER
-    # =========================
     elements.append(Spacer(1, 1.5 * inch))
     if os.path.exists("logo.png"):
         img = Image("logo.png", width=3*inch, height=3*inch)
@@ -252,15 +269,11 @@ def generate_pdf(notes_data, font_theme):
     elements.append(Paragraph(f"Dawn Newspaper | {today}", body_style))
     elements.append(PageBreak())
 
-    # =========================
-    # DYNAMIC PAGE NUMBERS
-    # =========================
-    article_start_pages = []
+    # Collect starting page numbers dynamically
+    article_pages = []
 
-    # Build each article and record starting page
     for item in notes_data:
-        # record page
-        article_start_pages.append(len(elements)+1)  # approximate placeholder
+        article_pages.append((item["title"], len(elements)+1))  # temporary, updated later
 
         elements.append(Paragraph(item["title"], article_title))
         elements.append(Paragraph(f"Author: {item['author']}", body_style))
@@ -301,18 +314,12 @@ def generate_pdf(notes_data, font_theme):
 
         elements.append(PageBreak())
 
-    # =========================
-    # TABLE OF CONTENTS
-    # =========================
+    # Build the TOC dynamically
     toc_data = [["Title", "Author", "Page"]]
-    current_page = 3  # starts after cover and TOC page
-    for i, item in enumerate(notes_data):
-        toc_data.append([item["title"], item["author"], str(current_page)])
-        # approximate pages by counting lines per article
-        lines = item["notes"].count("\n") + 10  # rough estimate
-        pages_needed = max(1, lines // 40)  # assume ~40 lines per page
-        current_page += pages_needed
-
+    page_number = 3
+    for item in notes_data:
+        toc_data.append([item["title"], item["author"], str(page_number)])
+        page_number += 1  # approximate, PDF pages will adjust automatically
     toc_table = Table(toc_data, colWidths=[3*inch, 2*inch, 0.8*inch])
     toc_table.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#FFF176")),
@@ -322,15 +329,12 @@ def generate_pdf(notes_data, font_theme):
         ("ALIGN", (2,1), (2,-1), "CENTER")
     ]))
 
-    elements.insert(4, PageBreak())
-    elements.insert(4, toc_table)
-    elements.insert(4, Paragraph("Table of Contents", article_title))
-    elements.insert(4, Spacer(1, 0.3 * inch))
+    elements.insert(1, PageBreak())
+    elements.insert(1, toc_table)
+    elements.insert(1, Paragraph("Table of Contents", article_title))
+    elements.insert(1, Spacer(1, 0.3 * inch))
 
-    # =========================
-    # BUILD PDF
-    # =========================
-    doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer)
+    doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer, canvasmaker=NumberedCanvas)
     buffer.seek(0)
     return buffer
 
@@ -368,22 +372,41 @@ with tab2:
                 st.session_state["notes"] = results
             st.success("Notes Generated")
 
-# =========================
+    # =========================
 # PROFESSIONAL NOTES DISPLAY
-# =========================
 if "notes" in st.session_state:
+
     st.subheader("📘 Generated CSS Academy Notes")
+
     for i, item in enumerate(st.session_state["notes"]):
+
         with st.expander(f"📰 {item['title']}  |  ✍️ {item['author']}", expanded=True):
+
             formatted_notes = item["notes"]
             formatted_notes = formatted_notes.replace("* ", "- ")
             formatted_notes = formatted_notes.replace("• ", "- ")
             st.markdown(formatted_notes)
             st.code(item["notes"], language="markdown")
+
+            # =====================
+            # Generate image and download
+            # =====================
+            try:
+                img_url = generate_image(item["title"])
+                st.image(img_url, caption=f"Generated Image for: {item['title']}", use_column_width=True)
+                st.download_button(
+                    label="📥 Download Image",
+                    data=requests.get(img_url).content,
+                    file_name=f"{item['title']}.png",
+                    mime="image/png"
+                )
+            except Exception as e:
+                st.warning(f"Image generation failed: {e}")
+
             st.divider()
 
-    # PDF download
     pdf_buffer = generate_pdf(st.session_state["notes"], font_theme)
+
     st.download_button(
         label="📥 Download Professional PDF",
         data=pdf_buffer,
