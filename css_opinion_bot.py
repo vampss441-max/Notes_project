@@ -41,7 +41,7 @@ st.title("🗞Dawn Opinion System")
 
 # Load Groq API key safely
 api_key = st.secrets["GROQ_API_KEY"]
-if not GROQ_API_KEY:
+if not api_key:
     st.error("Groq API key is not set! Please add GROK_API_KEY in Streamlit Secrets.")
     st.stop()
 client = Groq(api_key=api_key)
@@ -390,6 +390,7 @@ if "notes" in st.session_state:
         file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
         mime="application/pdf"
     )
+
 
 
 
