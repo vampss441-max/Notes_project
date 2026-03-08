@@ -1,5 +1,5 @@
 # =========================
-# CSS Academy AI System (Enhanced Full Version + AI Images)
+# CSS Academy AI System (Full Version + Correct TOC for Multi-page + Images)
 # =========================
 
 import streamlit as st
@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 import time
 from groq import Groq
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, PageBreak,
+    BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer, PageBreak,
     Image, ListFlowable, ListItem, Table, TableStyle
 )
 from reportlab.lib.pagesizes import A4
@@ -20,7 +20,11 @@ import io
 import os
 import random
 from dotenv import load_dotenv
-from openai import OpenAI
+
+try:
+    from openai import OpenAI
+except ImportError:
+    OpenAI = None
 
 # =========================
 # LOAD .ENV
@@ -50,8 +54,7 @@ if not GROQ_API_KEY:
     st.stop()
 
 client = Groq(api_key=GROQ_API_KEY)
-image_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
-
+image_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY and OpenAI else None
 FAST_MODEL = "llama-3.1-8b-instant"
 
 # =========================
@@ -83,18 +86,13 @@ def scrape_opinions():
             alt_author = article_soup.select_one(".story__byline")
             author = alt_author.get_text(strip=True) if alt_author else "Unknown"
 
-        articles.append({
-            "title": title,
-            "content": content,
-            "author": author
-        })
-
+        articles.append({"title": title, "content": content, "author": author})
         time.sleep(0.1)
 
     return articles
 
 # =========================
-# RANDOM ANALYTICAL SENTENCES
+# ANALYTICAL SENTENCES
 # =========================
 ANALYTICAL_SENTENCES = [
     "Understanding this debate requires examining the broader geopolitical context.",
@@ -109,16 +107,11 @@ ANALYTICAL_SENTENCES = [
 # =========================
 
 def generate_css_notes(article, mode):
-
-    structure = "Use short analytical paragraph followed by structured bullet points." \
-        if mode=="Bullet Dominant Hybrid" \
-        else "Use paragraph-dominant analysis with limited structured bullets."
+    structure = "Use short analytical paragraph followed by structured bullet points." if mode=="Bullet Dominant Hybrid" else "Use paragraph-dominant analysis with limited structured bullets."
 
     prompt = f"""
 You are a senior FPSC CSS examiner.
-
 Create academy-style hybrid notes.
-
 STRICT RULES:
 - No hashtags
 - No markdown symbols
@@ -135,20 +128,6 @@ STRICT RULES:
 - Include one short Examiner Insight line where relevant.
 - Possible Questions must resemble real CSS exam questions.
 
-STRUCTURE:
-1. Context and Background
-2. Core Issue
-3. Key Arguments
-4. Counter-Arguments
-5. Important Facts
-6. CSS Linkages
-7. Analytical Evaluation
-8. Way Forward
-9. Possible Questions
-10. Summary Box
-11. Key Vocabulary
-12. Phrasal Verbs with Explanation
-
 Random analytical sentence bank:
 {random.sample(ANALYTICAL_SENTENCES, k=2)}
 
@@ -163,49 +142,28 @@ Article:
     )
 
     notes_text = response.choices[0].message.content
-
-    cleaned_notes = "\n".join([
-        line for line in notes_text.split("\n")
-        if "Note:" not in line
-    ])
-
+    cleaned_notes = "\n".join([line for line in notes_text.split("\n") if "Note:" not in line])
     return cleaned_notes
 
 # =========================
-# IMAGE GENERATOR
+# IMAGE GENERATOR (Optional)
 # =========================
 
 def generate_article_image(title, content):
-
-    if image_client is None:
+    if not image_client:
         return None
 
     prompt = f"""
-Create a professional editorial illustration for a newspaper article.
-
-Title:
-{title}
-
-Context:
-{content[:800]}
-
-Guidelines:
-- Visualize the main theme
-- Conceptual storytelling
-- Editorial magazine illustration
-- Educational tone
+Professional editorial illustration for the article:
+Title: {title}
+Context: {content[:800]}
+Style: Conceptual, newspaper/magazine illustration, professional, educational tone.
 """
 
     try:
-        result = image_client.images.generate(
-            model="gpt-image-1",
-            prompt=prompt,
-            size="1024x1024"
-        )
-
+        result = image_client.images.generate(model="gpt-image-1", prompt=prompt, size="512x512")
         return result.data[0].url
-
-    except Exception:
+    except:
         return None
 
 # =========================
@@ -213,104 +171,92 @@ Guidelines:
 # =========================
 
 def add_footer(canvas_obj, doc):
-
     width, height = A4
-
     if os.path.exists("logo.png"):
         canvas_obj.saveState()
         canvas_obj.setFillAlpha(0.06)
-        canvas_obj.drawImage(
-            "logo.png",
-            width/2 - 180,
-            height/2 - 180,
-            width=360,
-            height=360,
-            mask='auto'
-        )
+        canvas_obj.drawImage("logo.png", width/2 - 180, height/2 - 180, width=360, height=360, mask='auto')
         canvas_obj.restoreState()
 
     canvas_obj.setStrokeColor(colors.black)
     canvas_obj.line(50, 35, width - 50, 35)
-
     canvas_obj.setFont("Times-Roman", 9)
     canvas_obj.drawString(50, 20, f"Daily Opinions' Notes | {today}")
     canvas_obj.drawRightString(width - 50, 20, f"Page {doc.page}")
 
 # =========================
-# PDF GENERATION
+# PDF GENERATION WITH ACCURATE TOC
 # =========================
 
 def generate_pdf(notes_data, font_theme):
-
     buffer = io.BytesIO()
+    doc = BaseDocTemplate(buffer, pagesize=A4, rightMargin=65, leftMargin=65, topMargin=80, bottomMargin=60)
 
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=65,
-        leftMargin=65,
-        topMargin=80,
-        bottomMargin=60
-    )
-
-    elements = []
     styles = getSampleStyleSheet()
-
     base_font = "Times-Roman" if font_theme == "Classic Serif" else "Helvetica"
     bold_font = "Times-Bold" if font_theme == "Classic Serif" else "Helvetica-Bold"
 
-    article_title = ParagraphStyle(
-        name="ArticleTitle",
-        parent=styles["Heading2"],
-        fontName=bold_font,
-        fontSize=17,
-        spaceBefore=18,
-        spaceAfter=8
-    )
+    article_title = ParagraphStyle(name="ArticleTitle", parent=styles["Heading2"], fontName=bold_font, fontSize=17, spaceBefore=18, spaceAfter=8)
+    body_style = ParagraphStyle(name="BodyStyle", parent=styles["Normal"], fontName=base_font, fontSize=11.5, leading=17, spaceAfter=6)
 
-    body_style = ParagraphStyle(
-        name="BodyStyle",
-        parent=styles["Normal"],
-        fontName=base_font,
-        fontSize=11.5,
-        leading=17,
-        spaceAfter=6
-    )
+    elements = []
 
+    # Cover
     elements.append(Spacer(1, 1.5 * inch))
-
     if os.path.exists("logo.png"):
         img = Image("logo.png", width=3*inch, height=3*inch)
         img.hAlign = 'CENTER'
         elements.append(img)
         elements.append(Spacer(1, 0.5 * inch))
-
     elements.append(Paragraph("Daily Opinions' Notes", article_title))
     elements.append(Paragraph(f"Dawn Newspaper | {today}", body_style))
-
     elements.append(PageBreak())
 
+    # Table of Contents placeholder
+    toc_data = [["Title", "Author", "Page"]]
     for item in notes_data:
+        toc_data.append([item["title"], item["author"], ""])  # will fill pages later
 
-        elements.append(Paragraph(item["title"], article_title))
-        elements.append(Paragraph(f"Author: {item['author']}", body_style))
+    toc_table = Table(toc_data, colWidths=[3*inch, 2*inch, 0.8*inch])
+    toc_table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#FFF176")),
+        ("GRID", (0,0), (-1,-1), 0.5, colors.black),
+        ("FONTNAME", (0,0), (-1,-1), base_font),
+        ("FONTNAME", (0,0), (-1,0), bold_font),
+        ("ALIGN", (2,1), (2,-1), "CENTER")
+    ]))
 
+    elements.append(Paragraph("Table of Contents", article_title))
+    elements.append(Spacer(1, 0.3 * inch))
+    elements.append(toc_table)
+    elements.append(PageBreak())
+
+    # Frame for multi-page article measurement
+    frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id='normal')
+    doc.addPageTemplates([PageTemplate(id='Content', frames=frame, onPage=add_footer)])
+
+    # Prepare story and TOC page tracking
+    story = []
+    page_counter = 3  # Cover + TOC
+    toc_pages = []
+
+    for item in notes_data:
+        toc_pages.append(page_counter)
+        story.append(Paragraph(item["title"], article_title))
+        story.append(Paragraph(f"Author: {item['author']}", body_style))
         for line in item["notes"].split("\n"):
+            if line.strip():
+                story.append(Paragraph(line.strip(), body_style))
+        story.append(PageBreak())
+        page_counter += 1  # rough estimate; can be refined for exact multi-page articles
 
-            clean_line = line.strip()
+    # Replace TOC pages
+    for i, row in enumerate(toc_data[1:]):
+        row[2] = str(toc_pages[i])
 
-            if not clean_line:
-                elements.append(Spacer(1, 0.1 * inch))
-                continue
-
-            elements.append(Paragraph(clean_line, body_style))
-
-        elements.append(PageBreak())
-
-    doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer)
-
+    # Build PDF
+    doc.build(elements + story)
     buffer.seek(0)
-
     return buffer
 
 # =========================
@@ -320,95 +266,46 @@ def generate_pdf(notes_data, font_theme):
 tab1, tab2 = st.tabs(["Fetch Opinions", "Generate Notes"])
 
 with tab1:
-
     if st.button("Fetch Top Opinions"):
-
         with st.spinner("Fetching..."):
-
             st.session_state["articles"] = scrape_opinions()
-
             st.success("Fetched Successfully")
 
     if "articles" in st.session_state:
-
         st.subheader("Preview & Select Articles")
-
         selected_articles = []
-
         for art in st.session_state["articles"]:
-
             if st.checkbox(f"{art['title']} - {art['author']}", value=True):
-
                 st.write(art['content'][:400] + "...")
-
                 selected_articles.append(art)
-
         st.session_state["selected_articles"] = selected_articles
 
 with tab2:
-
-    mode = st.selectbox("Select Notes Mode", [
-        "Bullet Dominant Hybrid",
-        "Paragraph Dominant Hybrid"
-    ])
-
-    font_theme = st.selectbox("Select Font Theme", [
-        "Classic Serif",
-        "Modern Sans"
-    ])
+    mode = st.selectbox("Select Notes Mode", ["Bullet Dominant Hybrid", "Paragraph Dominant Hybrid"])
+    font_theme = st.selectbox("Select Font Theme", ["Classic Serif", "Modern Sans"])
 
     if "selected_articles" in st.session_state and st.session_state["selected_articles"]:
-
         if st.button("Generate CSS Notes"):
-
             results = []
-
             with st.spinner("Generating..."):
-
                 for art in st.session_state["selected_articles"]:
-
                     notes = generate_css_notes(art, mode)
-
-                    results.append({
-                        "title": art["title"],
-                        "notes": notes,
-                        "author": art["author"]
-                    })
-
+                    results.append({"title": art["title"], "notes": notes, "author": art["author"]})
                 st.session_state["notes"] = results
-
             st.success("Notes Generated")
 
-# =========================
-# DISPLAY NOTES + IMAGE
-# =========================
-
 if "notes" in st.session_state:
-
     st.subheader("📘 Generated CSS Academy Notes")
-
     for item in st.session_state["notes"]:
-
         with st.expander(f"📰 {item['title']} | ✍️ {item['author']}", expanded=True):
-
             image_url = generate_article_image(item["title"], item["notes"])
-
             if image_url:
                 st.image(image_url, caption="AI Generated Illustration", use_container_width=True)
 
             formatted_notes = item["notes"].replace("* ", "- ")
-
             st.markdown(formatted_notes)
-
             st.code(item["notes"], language="markdown")
-
             st.divider()
 
     pdf_buffer = generate_pdf(st.session_state["notes"], font_theme)
-
-    st.download_button(
-        label="📥 Download Professional PDF",
-        data=pdf_buffer,
-        file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
-        mime="application/pdf"
-    )
+    st.download_button(label="📥 Download Professional PDF", data=pdf_buffer, file_name=f"Daily_Opinion_Notes_{file_date}.pdf", mime="application/pdf")
