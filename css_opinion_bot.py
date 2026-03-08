@@ -1,3 +1,4 @@
+
 # =========================
 # CSS Academy AI System (Enhanced Full Version)
 # =========================
@@ -20,7 +21,6 @@ import io
 import os
 import random
 from dotenv import load_dotenv
-from openai import OpenAI
 
 # =========================
 # LOAD .ENV
@@ -39,15 +39,12 @@ file_date = datetime.now().strftime("%d-%m-%Y")
 st.set_page_config(page_title="Daily Opinions' Notes", layout="wide")
 st.title("🗞Dawn Opinion System")
 
-# Load API keys safely
+# Load Groq API key safely
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not GROQ_API_KEY or not OPENAI_API_KEY:
-    st.error("API keys not set! Please set GROQ_API_KEY and OPENAI_API_KEY in your environment.")
+if not GROQ_API_KEY:
+    st.error("Groq API key is not set! Please set GROQ_API_KEY in your environment.")
     st.stop()
-
 client = Groq(api_key=GROQ_API_KEY)
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 FAST_MODEL = "llama-3.1-8b-instant"
 
@@ -62,7 +59,7 @@ def scrape_opinions():
     articles = []
     list_items = soup.find_all("h2", class_="story__title")
 
-    for link_tag in list_items[:6]:
+    for link_tag in list_items[:6]:  # Adjust number if needed
         title = link_tag.text.strip()
         article_url = link_tag.find("a")["href"]
 
@@ -84,12 +81,13 @@ def scrape_opinions():
             "content": content,
             "author": author
         })
-        time.sleep(0.1)
+
+        time.sleep(0.1)  # Reduced sleep for faster fetching
 
     return articles
 
 # =========================
-# RANDOM ANALYTICAL SENTENCES
+# RANDOM ANALYTICAL SENTENCES (Bonus)
 # =========================
 ANALYTICAL_SENTENCES = [
     "Understanding this debate requires examining the broader geopolitical context.",
@@ -103,10 +101,12 @@ ANALYTICAL_SENTENCES = [
 # CSS NOTES GENERATION
 # =========================
 def generate_css_notes(article, mode):
+
     structure = "Use short analytical paragraph followed by structured bullet points." \
         if mode=="Bullet Dominant Hybrid" \
         else "Use paragraph-dominant analysis with limited structured bullets."
 
+    # Full enhanced prompt including examiner insights and human-style improvements
     prompt = f"""
 You are a senior FPSC CSS examiner.
 
@@ -149,34 +149,26 @@ Random analytical sentence bank (choose 1-2 lines randomly to insert between sec
 Article:
 {article['content'][:5000]}
 """
+
     response = client.chat.completions.create(
         model=FAST_MODEL,
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3
     )
+
     notes_text = response.choices[0].message.content
+
+    # Remove unnecessary AI-style phrasal verb notes
     cleaned_notes = "\n".join([line for line in notes_text.split("\n")
                                if "Note: the phrasal verbs" not in line])
     return cleaned_notes
-
-# =========================
-# IMAGE GENERATION
-# =========================
-def generate_image(article_title):
-    prompt = f"Create a digital illustration for the following article: {article_title}"
-    response = openai_client.images.generate(
-        model="gpt-image-1",
-        prompt=prompt,
-        size="1024x1024"
-    )
-    img_url = response.data[0].url
-    return img_url
 
 # =========================
 # FOOTER
 # =========================
 def add_footer(canvas_obj, doc):
     width, height = A4
+
     if os.path.exists("logo.png"):
         canvas_obj.saveState()
         canvas_obj.setFillAlpha(0.06)
@@ -197,31 +189,10 @@ def add_footer(canvas_obj, doc):
     canvas_obj.drawRightString(width - 50, 20, f"Page {doc.page}")
 
 # =========================
-# PDF GENERATION WITH REAL TOC
+# PDF GENERATION
 # =========================
-from reportlab.pdfgen import canvas as pdf_canvas
-
-class NumberedCanvas(pdf_canvas.Canvas):
-    def __init__(self, *args, **kwargs):
-        pdf_canvas.Canvas.__init__(self, *args, **kwargs)
-        self._saved_page_states = []
-
-    def showPage(self):
-        self._saved_page_states.append(dict(self.__dict__))
-        self._startPage()
-
-    def save(self):
-        for state in self._saved_page_states:
-            self.__dict__.update(state)
-            self.draw_page_number()
-            pdf_canvas.Canvas.showPage(self)
-        pdf_canvas.Canvas.save(self)
-
-    def draw_page_number(self):
-        self.setFont("Times-Roman", 9)
-        self.drawRightString(A4[0]-50, 20, f"Page {self._pageNumber}")
-
 def generate_pdf(notes_data, font_theme):
+
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=65, leftMargin=65, topMargin=80, bottomMargin=60)
     elements = []
@@ -238,27 +209,33 @@ def generate_pdf(notes_data, font_theme):
         name="ArticleTitle", parent=styles["Heading2"], fontName=bold_font,
         fontSize=17, spaceBefore=18, spaceAfter=8
     )
+
     section_heading = ParagraphStyle(
         name="SectionHeading", parent=styles["Normal"], fontName=bold_font,
         fontSize=12, leading=16, spaceBefore=12, spaceAfter=6,
         textColor=colors.black, backColor=colors.HexColor("#FFF176")
     )
+
     body_style = ParagraphStyle(
         name="BodyStyle", parent=styles["Normal"], fontName=base_font,
         fontSize=11.5, leading=17, spaceAfter=6
     )
+
     summary_box = ParagraphStyle(
         name="SummaryBox", parent=styles["Normal"], fontName=base_font,
         fontSize=11, leading=14, backColor=colors.HexColor("#E0F7FA"),
         leftIndent=6, rightIndent=6, spaceBefore=4, spaceAfter=8
     )
+
     phrasal_style = ParagraphStyle(
         name="PhrasalStyle", parent=styles["Normal"], fontName=bold_font,
         fontSize=11, leading=14, backColor=colors.HexColor("#FFF3E0"),
         leftIndent=0, rightIndent=0, spaceBefore=4, spaceAfter=4
     )
 
+    # =========================
     # COVER
+    # =========================
     elements.append(Spacer(1, 1.5 * inch))
     if os.path.exists("logo.png"):
         img = Image("logo.png", width=3*inch, height=3*inch)
@@ -269,12 +246,29 @@ def generate_pdf(notes_data, font_theme):
     elements.append(Paragraph(f"Dawn Newspaper | {today}", body_style))
     elements.append(PageBreak())
 
-    # Collect starting page numbers dynamically
-    article_pages = []
+    # =========================
+    # TABLE OF CONTENTS
+    # =========================
+    toc_data = [["Title", "Author", "Page"]]
+    for i, item in enumerate(notes_data):
+        toc_data.append([item["title"], item["author"], str(i + 3)])
+    toc_table = Table(toc_data, colWidths=[3*inch, 2*inch, 0.8*inch])
+    toc_table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#FFF176")),
+        ("GRID", (0,0), (-1,-1), 0.5, colors.black),
+        ("FONTNAME", (0,0), (-1,-1), base_font),
+        ("FONTNAME", (0,0), (-1,0), bold_font),
+        ("ALIGN", (2,1), (2,-1), "CENTER")
+    ]))
+    elements.append(Paragraph("Table of Contents", article_title))
+    elements.append(Spacer(1, 0.3 * inch))
+    elements.append(toc_table)
+    elements.append(PageBreak())
 
+    # =========================
+    # CONTENT
+    # =========================
     for item in notes_data:
-        article_pages.append((item["title"], len(elements)+1))  # temporary, updated later
-
         elements.append(Paragraph(item["title"], article_title))
         elements.append(Paragraph(f"Author: {item['author']}", body_style))
         elements.append(Spacer(1, 0.2 * inch))
@@ -285,7 +279,11 @@ def generate_pdf(notes_data, font_theme):
             if not clean_line:
                 elements.append(Spacer(1, 0.1 * inch))
                 continue
+
+            # Remove leading numbers/dots for headings
             line_no_num = ''.join([c for c in clean_line if not c.isdigit() and c != '.']).strip()
+
+            # Highlight section headings
             if any(line_no_num.lower().startswith(sec.lower()) for sec in [
                 "context and background", "core issue", "key arguments", "counter-arguments",
                 "important facts", "css linkages", "analytical evaluation", "way forward",
@@ -297,44 +295,30 @@ def generate_pdf(notes_data, font_theme):
                 style_to_use = summary_box if "summary box" in line_no_num.lower() else section_heading
                 elements.append(Paragraph(line_no_num, style_to_use))
                 continue
+
+            # Highlight phrasal verbs or vocabulary
             if ":" in clean_line:
                 parts = clean_line.split(":", 1)
                 term = parts[0].strip()
                 explanation = parts[1].strip()
                 elements.append(Paragraph(f"<b>{term}:</b> {explanation}", phrasal_style))
                 continue
+
+            # Bulleted list items
             if clean_line.startswith("*") or clean_line[0].isdigit():
                 bullet_text = clean_line.lstrip("*0123456789. ").strip()
                 bullet_buffer.append(ListItem(Paragraph(bullet_text, body_style)))
                 continue
+
             if bullet_buffer:
                 elements.append(ListFlowable(bullet_buffer, bulletType="bullet", leftIndent=20))
                 bullet_buffer = []
+
             elements.append(Paragraph(clean_line, body_style))
 
         elements.append(PageBreak())
 
-    # Build the TOC dynamically
-    toc_data = [["Title", "Author", "Page"]]
-    page_number = 3
-    for item in notes_data:
-        toc_data.append([item["title"], item["author"], str(page_number)])
-        page_number += 1  # approximate, PDF pages will adjust automatically
-    toc_table = Table(toc_data, colWidths=[3*inch, 2*inch, 0.8*inch])
-    toc_table.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#FFF176")),
-        ("GRID", (0,0), (-1,-1), 0.5, colors.black),
-        ("FONTNAME", (0,0), (-1,-1), base_font),
-        ("FONTNAME", (0,0), (-1,0), bold_font),
-        ("ALIGN", (2,1), (2,-1), "CENTER")
-    ]))
-
-    elements.insert(1, PageBreak())
-    elements.insert(1, toc_table)
-    elements.insert(1, Paragraph("Table of Contents", article_title))
-    elements.insert(1, Spacer(1, 0.3 * inch))
-
-    doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer, canvasmaker=NumberedCanvas)
+    doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer)
     buffer.seek(0)
     return buffer
 
@@ -374,6 +358,7 @@ with tab2:
 
     # =========================
 # PROFESSIONAL NOTES DISPLAY
+# =========================
 if "notes" in st.session_state:
 
     st.subheader("📘 Generated CSS Academy Notes")
@@ -383,28 +368,20 @@ if "notes" in st.session_state:
         with st.expander(f"📰 {item['title']}  |  ✍️ {item['author']}", expanded=True):
 
             formatted_notes = item["notes"]
+
+            # Convert bullet symbols for markdown
             formatted_notes = formatted_notes.replace("* ", "- ")
             formatted_notes = formatted_notes.replace("• ", "- ")
-            st.markdown(formatted_notes)
-            st.code(item["notes"], language="markdown")
 
-            # =====================
-            # Generate image and download
-            # =====================
-            try:
-                img_url = generate_image(item["title"])
-                st.image(img_url, caption=f"Generated Image for: {item['title']}", use_column_width=True)
-                st.download_button(
-                    label="📥 Download Image",
-                    data=requests.get(img_url).content,
-                    file_name=f"{item['title']}.png",
-                    mime="image/png"
-                )
-            except Exception as e:
-                st.warning(f"Image generation failed: {e}")
+            # Render nicely formatted markdown
+            st.markdown(formatted_notes)
+
+            # Copy button
+            st.code(item["notes"], language="markdown")
 
             st.divider()
 
+    # PDF download still available
     pdf_buffer = generate_pdf(st.session_state["notes"], font_theme)
 
     st.download_button(
@@ -413,3 +390,5 @@ if "notes" in st.session_state:
         file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
         mime="application/pdf"
     )
+
+
