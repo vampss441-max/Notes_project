@@ -8,6 +8,7 @@ import requests
 from bs4 import BeautifulSoup
 import time
 from groq import Groq
+from groq import GroqClient 
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, PageBreak,
     Image, ListFlowable, ListItem, Table, TableStyle
@@ -40,11 +41,11 @@ st.set_page_config(page_title="Daily Opinions' Notes", layout="wide")
 st.title("🗞Dawn Opinion System")
 
 # Load Groq API key safely
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+api_key = st.secrets["GROK_API_KEY"]
 if not GROQ_API_KEY:
     st.error("Groq API key is not set! Please set GROQ_API_KEY in your environment.")
     st.stop()
-client = Groq(api_key=GROQ_API_KEY)
+client = GroqClient(api_key=api_key)
 
 FAST_MODEL = "llama-3.1-8b-instant"
 
@@ -390,5 +391,6 @@ if "notes" in st.session_state:
         file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
         mime="application/pdf"
     )
+
 
 
