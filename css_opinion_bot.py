@@ -1,5 +1,5 @@
 # =========================
-# CSS Academy AI System (Full Version + Correct TOC for Multi-page + Images)
+# CSS Academy AI System (Full Version + Original PDF Layout + Streamlit AI Images)
 # =========================
 
 import streamlit as st
@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 import time
 from groq import Groq
 from reportlab.platypus import (
-    BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer, PageBreak,
+    SimpleDocTemplate, Paragraph, Spacer, PageBreak,
     Image, ListFlowable, ListItem, Table, TableStyle
 )
 from reportlab.lib.pagesizes import A4
@@ -146,20 +146,18 @@ Article:
     return cleaned_notes
 
 # =========================
-# IMAGE GENERATOR (Optional)
+# IMAGE GENERATOR (Streamlit Only)
 # =========================
 
 def generate_article_image(title, content):
     if not image_client:
         return None
-
     prompt = f"""
 Professional editorial illustration for the article:
 Title: {title}
 Context: {content[:800]}
 Style: Conceptual, newspaper/magazine illustration, professional, educational tone.
 """
-
     try:
         result = image_client.images.generate(model="gpt-image-1", prompt=prompt, size="512x512")
         return result.data[0].url
@@ -185,21 +183,23 @@ def add_footer(canvas_obj, doc):
     canvas_obj.drawRightString(width - 50, 20, f"Page {doc.page}")
 
 # =========================
-# PDF GENERATION WITH ACCURATE TOC
+# PDF GENERATION (Original Layout + TOC)
 # =========================
 
 def generate_pdf(notes_data, font_theme):
     buffer = io.BytesIO()
-    doc = BaseDocTemplate(buffer, pagesize=A4, rightMargin=65, leftMargin=65, topMargin=80, bottomMargin=60)
-
+    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=65, leftMargin=65, topMargin=80, bottomMargin=60)
+    elements = []
     styles = getSampleStyleSheet()
+
     base_font = "Times-Roman" if font_theme == "Classic Serif" else "Helvetica"
     bold_font = "Times-Bold" if font_theme == "Classic Serif" else "Helvetica-Bold"
 
     article_title = ParagraphStyle(name="ArticleTitle", parent=styles["Heading2"], fontName=bold_font, fontSize=17, spaceBefore=18, spaceAfter=8)
+    section_heading = ParagraphStyle(name="SectionHeading", parent=styles["Normal"], fontName=bold_font, fontSize=12, leading=16, spaceBefore=12, spaceAfter=6, textColor=colors.black, backColor=colors.HexColor("#FFF176"))
     body_style = ParagraphStyle(name="BodyStyle", parent=styles["Normal"], fontName=base_font, fontSize=11.5, leading=17, spaceAfter=6)
-
-    elements = []
+    summary_box = ParagraphStyle(name="SummaryBox", parent=styles["Normal"], fontName=base_font, fontSize=11, leading=14, backColor=colors.HexColor("#E0F7FA"), leftIndent=6, rightIndent=6, spaceBefore=4, spaceAfter=8)
+    phrasal_style = ParagraphStyle(name="PhrasalStyle", parent=styles["Normal"], fontName=bold_font, fontSize=11, leading=14, backColor=colors.HexColor("#FFF3E0"), leftIndent=0, rightIndent=0, spaceBefore=4, spaceAfter=4)
 
     # Cover
     elements.append(Spacer(1, 1.5 * inch))
@@ -212,10 +212,10 @@ def generate_pdf(notes_data, font_theme):
     elements.append(Paragraph(f"Dawn Newspaper | {today}", body_style))
     elements.append(PageBreak())
 
-    # Table of Contents placeholder
+    # Table of Contents
     toc_data = [["Title", "Author", "Page"]]
-    for item in notes_data:
-        toc_data.append([item["title"], item["author"], ""])  # will fill pages later
+    for i, item in enumerate(notes_data):
+        toc_data.append([item["title"], item["author"], str(i+3)])
 
     toc_table = Table(toc_data, colWidths=[3*inch, 2*inch, 0.8*inch])
     toc_table.setStyle(TableStyle([
@@ -225,37 +225,45 @@ def generate_pdf(notes_data, font_theme):
         ("FONTNAME", (0,0), (-1,0), bold_font),
         ("ALIGN", (2,1), (2,-1), "CENTER")
     ]))
-
     elements.append(Paragraph("Table of Contents", article_title))
     elements.append(Spacer(1, 0.3 * inch))
     elements.append(toc_table)
     elements.append(PageBreak())
 
-    # Frame for multi-page article measurement
-    frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id='normal')
-    doc.addPageTemplates([PageTemplate(id='Content', frames=frame, onPage=add_footer)])
-
-    # Prepare story and TOC page tracking
-    story = []
-    page_counter = 3  # Cover + TOC
-    toc_pages = []
-
+    # Content
     for item in notes_data:
-        toc_pages.append(page_counter)
-        story.append(Paragraph(item["title"], article_title))
-        story.append(Paragraph(f"Author: {item['author']}", body_style))
+        elements.append(Paragraph(item["title"], article_title))
+        elements.append(Paragraph(f"Author: {item['author']}", body_style))
+        elements.append(Spacer(1, 0.2 * inch))
+
+        bullet_buffer = []
         for line in item["notes"].split("\n"):
-            if line.strip():
-                story.append(Paragraph(line.strip(), body_style))
-        story.append(PageBreak())
-        page_counter += 1  # rough estimate; can be refined for exact multi-page articles
+            clean_line = line.strip().replace("**", "")
+            if not clean_line:
+                elements.append(Spacer(1, 0.1 * inch))
+                continue
+            if any(clean_line.lower().startswith(sec.lower()) for sec in ["context and background", "core issue", "key arguments", "counter-arguments", "important facts", "css linkages", "analytical evaluation", "way forward", "possible questions", "summary box", "key vocabulary", "phrasal verbs with explanation"]):
+                if bullet_buffer:
+                    elements.append(ListFlowable(bullet_buffer, bulletType="bullet", leftIndent=20))
+                    bullet_buffer = []
+                style_to_use = summary_box if "summary box" in clean_line.lower() else section_heading
+                elements.append(Paragraph(clean_line, style_to_use))
+                continue
+            if ":" in clean_line:
+                parts = clean_line.split(":", 1)
+                elements.append(Paragraph(f"<b>{parts[0].strip()}:</b> {parts[1].strip()}", phrasal_style))
+                continue
+            if clean_line.startswith("*") or clean_line[0].isdigit():
+                bullet_text = clean_line.lstrip("*0123456789. ").strip()
+                bullet_buffer.append(ListItem(Paragraph(bullet_text, body_style)))
+                continue
+            if bullet_buffer:
+                elements.append(ListFlowable(bullet_buffer, bulletType="bullet", leftIndent=20))
+                bullet_buffer = []
+            elements.append(Paragraph(clean_line, body_style))
+        elements.append(PageBreak())
 
-    # Replace TOC pages
-    for i, row in enumerate(toc_data[1:]):
-        row[2] = str(toc_pages[i])
-
-    # Build PDF
-    doc.build(elements + story)
+    doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer)
     buffer.seek(0)
     return buffer
 
@@ -301,7 +309,6 @@ if "notes" in st.session_state:
             image_url = generate_article_image(item["title"], item["notes"])
             if image_url:
                 st.image(image_url, caption="AI Generated Illustration", use_container_width=True)
-
             formatted_notes = item["notes"].replace("* ", "- ")
             st.markdown(formatted_notes)
             st.code(item["notes"], language="markdown")
