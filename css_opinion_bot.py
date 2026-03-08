@@ -7,7 +7,7 @@ import streamlit as st
 import requests
 from bs4 import BeautifulSoup
 import time
-from groq import GroqClient 
+from groq import Groq
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, PageBreak,
     Image, ListFlowable, ListItem, Table, TableStyle
@@ -44,7 +44,7 @@ api_key = st.secrets["GROK_API_KEY"]
 if not GROQ_API_KEY:
     st.error("Groq API key is not set! Please add GROK_API_KEY in Streamlit Secrets.")
     st.stop()
-client = GroqClient(api_key=api_key)
+client = Groq(api_key=api_key)
 
 FAST_MODEL = "llama-3.1-8b-instant"
 
@@ -390,6 +390,7 @@ if "notes" in st.session_state:
         file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
         mime="application/pdf"
     )
+
 
 
 
