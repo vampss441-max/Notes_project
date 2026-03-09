@@ -123,11 +123,10 @@ STRICT RULES:
 - Provide very short explanation
 - Include 5 key vocabulary words with meanings
 - Provide 5-10 line summary of article
-- Add CSS linkage tags for relevant papers
 - Occasionally add short analytical linking sentences between sections.
 - Include one short "Examiner Insight" line where relevant.
 - Possible Questions must resemble real CSS exam questions.
-- Avoid AI style repetition.
+- Avoid AI style repetition and don't miss important data mentioned in articles.
 
 STRUCTURE:
 1. Context and Background
@@ -135,19 +134,18 @@ STRUCTURE:
 3. Key Arguments
 4. Counter-Arguments
 5. Important Facts
-6. CSS Linkages
-7. Analytical Evaluation
-8. Way Forward
-9. Possible Questions
-10. Summary Box
-11. Key Vocabulary
-12. Phrasal Verbs with Explanation
+6. Analytical Evaluation
+7. Way Forward
+8. Possible Questions
+9. Summary Box
+10. Key Vocabulary
+11. Phrasal Verbs with Explanation
 
 Random analytical sentence bank (choose 1-2 lines randomly to insert between sections):
 {random.sample(ANALYTICAL_SENTENCES, k=2)}
 
 Article:
-{article['content'][:5000]}
+{article['content'][:6000]}
 """
 
     response = client.chat.completions.create(
@@ -286,7 +284,7 @@ def generate_pdf(notes_data, font_theme):
             # Highlight section headings
             if any(line_no_num.lower().startswith(sec.lower()) for sec in [
                 "context and background", "core issue", "key arguments", "counter-arguments",
-                "important facts", "css linkages", "analytical evaluation", "way forward",
+                "important facts", "analytical evaluation", "way forward",
                 "possible questions", "summary box", "key vocabulary", "phrasal verbs with explanation"
             ]):
                 if bullet_buffer:
@@ -390,6 +388,7 @@ if "notes" in st.session_state:
         file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
         mime="application/pdf"
     )
+
 
 
 
