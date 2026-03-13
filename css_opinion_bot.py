@@ -314,33 +314,30 @@ def generate_pdf(notes_data, font_theme):
 
     # =========================
     
-    # CAPSULE
-# =========================
+ 
 # CAPSULE
 # =========================
 
-capsule = learning_capsule()
+    capsule = learning_capsule()
 
-elements.append(highlighted_heading("Daily Learning Capsule"))
+    elements.append(highlighted_heading("Daily Learning Capsule"))
 
-capsule_table = Table(
-    [[Paragraph(capsule.replace("\n","<br/>"), body_style)]],
-    colWidths=450
-)
+    capsule_table = Table(
+        [[Paragraph(capsule.replace("\n","<br/>"), body_style)]],
+        colWidths=450)
 
-capsule_table.setStyle(TableStyle([
-    ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#E0F7FA")),
-    ("BOX",(0,0),(-1,-1),1,colors.black),
-    ("LEFTPADDING",(0,0),(-1,-1),12),
-    ("RIGHTPADDING",(0,0),(-1,-1),12),
-    ("TOPPADDING",(0,0),(-1,-1),10),
-    ("BOTTOMPADDING",(0,0),(-1,-1),10),
-]))
+    capsule_table.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#E0F7FA")),
+        ("BOX",(0,0),(-1,-1),1,colors.black),
+        ("LEFTPADDING",(0,0),(-1,-1),12),
+        ("RIGHTPADDING",(0,0),(-1,-1),12),
+        ("TOPPADDING",(0,0),(-1,-1),10),
+        ("BOTTOMPADDING",(0,0),(-1,-1),10),]))
 
-elements.append(Spacer(1,10))
-elements.append(capsule_table)
-elements.append(PageBreak())
-    # CONTENT
+    elements.append(Spacer(1,10))
+    elements.append(capsule_table)
+    elements.append(PageBreak())
+        # CONTENT
     # =========================
     for item in notes_data:
         elements.append(Paragraph(item["title"], article_title))
@@ -464,6 +461,7 @@ if "notes" in st.session_state:
         file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
         mime="application/pdf"
     )
+
 
 
 
