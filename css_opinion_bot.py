@@ -370,7 +370,7 @@ def generate_pdf(notes_data, font_theme):
     return buffer
 
 # ========================
-     capsule = learning_capsule()
+    capsule = learning_capsule()
 
     elements.append(highlighted_heading("Daily Learning Capsule"))
 
@@ -457,6 +457,7 @@ if "notes" in st.session_state:
         file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
         mime="application/pdf"
     )
+
 
 
 
