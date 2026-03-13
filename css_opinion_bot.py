@@ -184,7 +184,7 @@ keep it concise and educational.
         temperature=0.4
     )
 
-    return clean_text(res.choices[0].message.content)
+    return res.choices[0].message.content
     
 # =========================
 def highlighted_heading(text):
@@ -313,30 +313,6 @@ def generate_pdf(notes_data, font_theme):
     elements.append(PageBreak())
 
     # =========================
-    
- 
-# CAPSULE
-# =========================
-
-    capsule = learning_capsule()
-
-    elements.append(highlighted_heading("Daily Learning Capsule"))
-
-    capsule_table = Table(
-        [[Paragraph(capsule.replace("\n","<br/>"), body_style)]],
-        colWidths=450)
-
-    capsule_table.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#E0F7FA")),
-        ("BOX",(0,0),(-1,-1),1,colors.black),
-        ("LEFTPADDING",(0,0),(-1,-1),12),
-        ("RIGHTPADDING",(0,0),(-1,-1),12),
-        ("TOPPADDING",(0,0),(-1,-1),10),
-        ("BOTTOMPADDING",(0,0),(-1,-1),10),]))
-
-    elements.append(Spacer(1,10))
-    elements.append(capsule_table)
-    elements.append(PageBreak())
         # CONTENT
     # =========================
     for item in notes_data:
@@ -393,6 +369,26 @@ def generate_pdf(notes_data, font_theme):
     buffer.seek(0)
     return buffer
 
+# ========================
+     capsule = learning_capsule()
+
+    elements.append(highlighted_heading("Daily Learning Capsule"))
+
+    capsule_table = Table(
+        [[Paragraph(capsule.replace("\n","<br/>"), body_style)]],
+        colWidths=450)
+
+    capsule_table.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#E0F7FA")),
+        ("BOX",(0,0),(-1,-1),1,colors.black),
+        ("LEFTPADDING",(0,0),(-1,-1),12),
+        ("RIGHTPADDING",(0,0),(-1,-1),12),
+        ("TOPPADDING",(0,0),(-1,-1),10),
+        ("BOTTOMPADDING",(0,0),(-1,-1),10),]))
+
+    elements.append(Spacer(1,10))
+    elements.append(capsule_table)
+    elements.append(PageBreak())
 # =========================
 # STREAMLIT UI
 # =========================
@@ -461,6 +457,7 @@ if "notes" in st.session_state:
         file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
         mime="application/pdf"
     )
+
 
 
 
