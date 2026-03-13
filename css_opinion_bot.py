@@ -315,31 +315,31 @@ def generate_pdf(notes_data, font_theme):
     # =========================
     
     # CAPSULE
+# =========================
+# CAPSULE
+# =========================
 
-    story.append(highlighted_heading("Daily Learning Capsule"))
+capsule = learning_capsule()
 
-    capsule_table = Table(
-        [[Paragraph(capsule.replace("\n","<br/>"), text_style)]],
-        colWidths=450
-    )
+elements.append(highlighted_heading("Daily Learning Capsule"))
 
-    capsule_table.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,-1),TEAL_LIGHT),
-        ("BOX",(0,0),(-1,-1),1,black),
-        ("LEFTPADDING",(0,0),(-1,-1),12),
-        ("RIGHTPADDING",(0,0),(-1,-1),12),
-        ("TOPPADDING",(0,0),(-1,-1),10),
-        ("BOTTOMPADDING",(0,0),(-1,-1),10),
-    ]))
+capsule_table = Table(
+    [[Paragraph(capsule.replace("\n","<br/>"), body_style)]],
+    colWidths=450
+)
 
-    story.append(Spacer(1,10))
-    story.append(capsule_table)
+capsule_table.setStyle(TableStyle([
+    ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#E0F7FA")),
+    ("BOX",(0,0),(-1,-1),1,colors.black),
+    ("LEFTPADDING",(0,0),(-1,-1),12),
+    ("RIGHTPADDING",(0,0),(-1,-1),12),
+    ("TOPPADDING",(0,0),(-1,-1),10),
+    ("BOTTOMPADDING",(0,0),(-1,-1),10),
+]))
 
-    doc.build(story, onFirstPage=footer, onLaterPages=footer)
-
-    buffer.seek(0)
-
-    return buffer
+elements.append(Spacer(1,10))
+elements.append(capsule_table)
+elements.append(PageBreak())
     # CONTENT
     # =========================
     for item in notes_data:
@@ -464,6 +464,7 @@ if "notes" in st.session_state:
         file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
         mime="application/pdf"
     )
+
 
 
 
