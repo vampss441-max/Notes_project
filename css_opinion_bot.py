@@ -162,6 +162,55 @@ Article:
     return cleaned_notes
 
 # =========================
+def learning_capsule():
+
+    prompt = """
+Create a Daily Learning Capsule:
+
+Idiom of the Day
+Meaning
+Example sentence
+
+Country – Capital – Currency
+
+Do You Know?
+Provide one interesting global fact.
+keep it concise and educational.
+"""
+
+    res = client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[{"role":"user","content":prompt}],
+        temperature=0.4
+    )
+
+    return clean_text(res.choices[0].message.content)
+    
+# =========================
+def highlighted_heading(text):
+
+    style = ParagraphStyle("h", fontSize=13)
+
+    table = Table([[Paragraph(f"<b>{text}</b>", style)]], colWidths=450)
+
+    table.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,-1),YELLOW),
+        ("BOX",(0,0),(-1,-1),0.8,black),
+        ("LEFTPADDING",(0,0),(-1,-1),10),
+        ("RIGHTPADDING",(0,0),(-1,-1),10),
+        ("TOPPADDING",(0,0),(-1,-1),6),
+        ("BOTTOMPADDING",(0,0),(-1,-1),6),
+    ]))
+
+    return table
+
+
+
+
+
+
+
+
 # FOOTER
 # =========================
 def add_footer(canvas_obj, doc):
@@ -264,6 +313,33 @@ def generate_pdf(notes_data, font_theme):
     elements.append(PageBreak())
 
     # =========================
+    
+    # CAPSULE
+
+    story.append(highlighted_heading("Daily Learning Capsule"))
+
+    capsule_table = Table(
+        [[Paragraph(capsule.replace("\n","<br/>"), text_style)]],
+        colWidths=450
+    )
+
+    capsule_table.setStyle(TableStyle([
+        ("BACKGROUND",(0,0),(-1,-1),TEAL_LIGHT),
+        ("BOX",(0,0),(-1,-1),1,black),
+        ("LEFTPADDING",(0,0),(-1,-1),12),
+        ("RIGHTPADDING",(0,0),(-1,-1),12),
+        ("TOPPADDING",(0,0),(-1,-1),10),
+        ("BOTTOMPADDING",(0,0),(-1,-1),10),
+    ]))
+
+    story.append(Spacer(1,10))
+    story.append(capsule_table)
+
+    doc.build(story, onFirstPage=footer, onLaterPages=footer)
+
+    buffer.seek(0)
+
+    return buffer
     # CONTENT
     # =========================
     for item in notes_data:
@@ -388,6 +464,7 @@ if "notes" in st.session_state:
         file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
         mime="application/pdf"
     )
+
 
 
 
