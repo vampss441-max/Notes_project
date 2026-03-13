@@ -371,7 +371,7 @@ def generate_pdf(notes_data, font_theme):
     elements.append(highlighted_heading("Daily Learning Capsule"))
 
     capsule_table = Table(
-        [[Paragraph(format_capsule_text(capsule), body_style))]],
+        [[Paragraph(format_capsule_text(capsule), body_style)]],
         colWidths=450)
 
     capsule_table.setStyle(TableStyle([
@@ -460,6 +460,7 @@ if "notes" in st.session_state:
         file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
         mime="application/pdf"
     )
+
 
 
 
