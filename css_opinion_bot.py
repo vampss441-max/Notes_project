@@ -194,8 +194,8 @@ def highlighted_heading(text):
     table = Table([[Paragraph(f"<b>{text}</b>", style)]], colWidths=450)
 
     table.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,-1),YELLOW),
-        ("BOX",(0,0),(-1,-1),0.8,black),
+        ("BACKGROUND",(0,0),(-1,-1),colors.yellow),
+        ("BOX",(0,0),(-1,-1),0.8,colors.black),
         ("LEFTPADDING",(0,0),(-1,-1),10),
         ("RIGHTPADDING",(0,0),(-1,-1),10),
         ("TOPPADDING",(0,0),(-1,-1),6),
@@ -364,12 +364,7 @@ def generate_pdf(notes_data, font_theme):
             elements.append(Paragraph(clean_line, body_style))
 
         elements.append(PageBreak())
-
-    doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer)
-    buffer.seek(0)
-    return buffer
-
-# ========================
+    
     capsule = learning_capsule()
 
     elements.append(highlighted_heading("Daily Learning Capsule"))
@@ -389,6 +384,13 @@ def generate_pdf(notes_data, font_theme):
     elements.append(Spacer(1,10))
     elements.append(capsule_table)
     elements.append(PageBreak())
+        
+
+    doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer)
+    buffer.seek(0)
+    return buffer
+
+# ========================
 # =========================
 # STREAMLIT UI
 # =========================
@@ -457,6 +459,7 @@ if "notes" in st.session_state:
         file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
         mime="application/pdf"
     )
+
 
 
 
