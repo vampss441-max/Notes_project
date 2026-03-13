@@ -186,6 +186,24 @@ Do NOT use markdown symbols like ** or #. Use plain headings and bullet points.
     )
 
     return res.choices[0].message.content
+# =========================
+# FORMAT CAPSULE TEXT
+# =========================
+def format_capsule_text(text):
+
+    lines = text.split("\n")
+    cleaned = []
+
+    for line in lines:
+        line = line.replace("**", "").strip()
+
+        # convert dash bullets to dot bullets
+        if line.startswith("- "):
+            line = "• " + line[2:]
+
+        cleaned.append(line)
+
+    return "<br/>".join(cleaned)
     
 # =========================
 def highlighted_heading(text):
@@ -460,6 +478,7 @@ if "notes" in st.session_state:
         file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
         mime="application/pdf"
     )
+
 
 
 
