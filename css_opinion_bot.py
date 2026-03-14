@@ -112,7 +112,7 @@ STRICT RULES:
 - Extract 5 relevant phrasal verbs from article
 - Provide very short explanation
 - Include 5 key vocabulary words with meanings
-- Provide 5-10 line summary of article
+- Provide 5-10 line summary of article and don't mention any note in the end 
 - Occasionally add short analytical linking sentences between sections.
 - Include one short "Examiner Insight" line where relevant.
 - Possible Questions must resemble real CSS exam questions.
