@@ -106,7 +106,6 @@ ANALYTICAL_SENTENCES = [
 # =========================
 # CSS NOTES GENERATION
 # =========================
-
 def generate_css_notes(article, mode):
 
     structure = "Use short analytical paragraph followed by structured bullet points." \
@@ -135,17 +134,20 @@ STRICT RULES:
 - Avoid AI style repetition and don't miss important data mentioned in articles.
 
 STRUCTURE:
-Context and Background
-Core Issue
-Key Arguments
-Counter-Arguments
-Important Facts
-Analytical Evaluation
-Way Forward
-Possible Questions
-Summary Box
-Key Vocabulary
-Phrasal Verbs with Explanation
+1. Context and Background
+2. Core Issue
+3. Key Arguments
+4. Counter-Arguments
+5. Important Facts
+6. Analytical Evaluation
+7. Way Forward
+8. Possible Questions
+9. Summary Box
+10. Key Vocabulary
+11. Phrasal Verbs with Explanation
+
+Random analytical sentence bank (choose 1-2 lines randomly to insert between sections):
+{random.sample(ANALYTICAL_SENTENCES, k=2)}
 
 Article:
 {article['content'][:6000]}
@@ -153,16 +155,16 @@ Article:
 
     response = client.chat.completions.create(
         model=FAST_MODEL,
-        messages=[{"role":"user","content":prompt}],
+        messages=[{"role": "user", "content": prompt}],
         temperature=0.3
     )
 
     notes_text = response.choices[0].message.content
 
-    cleaned_notes = "\n".join(
+    cleaned_notes = "\n".join([
         line for line in notes_text.split("\n")
-        if "Note:" not in line
-    )
+        if "Note: the phrasal verbs" not in line
+    ])
 
     return cleaned_notes
 
