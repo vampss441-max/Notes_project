@@ -21,11 +21,7 @@ import io
 import os
 import random
 from dotenv import load_dotenv
-
-# =========================
-# LOAD .ENV
-# =========================
-load_dotenv()
+import hashlib
 
 # =========================
 # DATE
@@ -162,30 +158,72 @@ Article:
     return cleaned_notes
 
 # =========================
+# =========================
+# DAILY LEARNING CAPSULE ENGINE (UPGRADED)
+# =========================
 def learning_capsule():
 
-    prompt = """
-Create a Daily Learning Capsule:
+    today = datetime.now().strftime("%d %B %Y")
+
+    seed = int(hashlib.md5(today.encode()).hexdigest(), 16) % 10000
+    random.seed(seed)
+
+    prompt = f"""
+You are preparing a Daily Learning Capsule for CSS aspirants.
+
+Date: {today}
+
+RULES
+Every day must generate DIFFERENT content.
+
+Include the following sections:
 
 Idiom of the Day
 Meaning
-Example sentence
+Example Sentence
 
-Country – Capital – Currency
+Word of the Day
+Meaning
+Example Sentence
 
-Do You Know?
-Provide one interesting global fact.
-keep it concise and educational.
-Do NOT use markdown symbols like ** or #. Use plain headings and bullet points.
+Country Snapshot
+Country
+Capital
+Currency
+
+Did You Know?
+Provide one surprising global fact.
+
+Quote of the Day
+Short inspirational quote relevant to learning or leadership.
+
+Keep explanations short and exam friendly.
+Avoid markdown symbols like ** or #.
+Use clean headings and short bullet points.
 """
 
     res = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[{"role":"user","content":prompt}],
-        temperature=0.4
+        model=FAST_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.85
     )
 
     return res.choices[0].message.content
+# =========================
+# =========================
+# GET DAILY CAPSULE (SESSION SAFE)
+# =========================
+def get_daily_capsule():
+
+    today_key = datetime.now().strftime("%Y-%m-%d")
+
+    if "capsule_date" not in st.session_state or st.session_state["capsule_date"] != today_key:
+        st.session_state["capsule"] = learning_capsule()
+        st.session_state["capsule_date"] = today_key
+
+    return st.session_state["capsule"]
+# FORMAT CAPSULE TEXT
+# =========================
 # =========================
 # FORMAT CAPSULE TEXT
 # =========================
@@ -195,11 +233,19 @@ def format_capsule_text(text):
     cleaned = []
 
     for line in lines:
+
         line = line.replace("**", "").strip()
 
-        # convert dash bullets to dot bullets
+        if not line:
+            cleaned.append("<br/>")
+            continue
+
         if line.startswith("- "):
             line = "• " + line[2:]
+
+        if ":" in line and not line.startswith("•"):
+            parts = line.split(":", 1)
+            line = f"<b>{parts[0]}:</b> {parts[1]}"
 
         cleaned.append(line)
 
@@ -208,21 +254,24 @@ def format_capsule_text(text):
 # =========================
 def highlighted_heading(text):
 
-    style = ParagraphStyle("h", fontSize=13)
+    style = ParagraphStyle(
+        "h",
+        fontSize=13,
+        alignment=1  # center text
+    )
 
-    table = Table([[Paragraph(f"<b>{text}</b>", style)]], colWidths=450)
+    table = Table([[Paragraph(f"<b>{text}</b>", style)]], colWidths="100%")
 
     table.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,-1),colors.yellow),
-        ("BOX",(0,0),(-1,-1),0.8,colors.black),
+        ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#FFF176")),
+        ("BOX",(0,0),(-1,-1),1,colors.black),
         ("LEFTPADDING",(0,0),(-1,-1),10),
         ("RIGHTPADDING",(0,0),(-1,-1),10),
-        ("TOPPADDING",(0,0),(-1,-1),6),
-        ("BOTTOMPADDING",(0,0),(-1,-1),6),
+        ("TOPPADDING",(0,0),(-1,-1),8),
+        ("BOTTOMPADDING",(0,0),(-1,-1),8),
     ]))
 
     return table
-
 
 
 
@@ -384,7 +433,7 @@ def generate_pdf(notes_data, font_theme):
 
         elements.append(PageBreak())
     
-    capsule = learning_capsule()
+    capsule = get_learning_capsule()
 
     elements.append(highlighted_heading("Daily Learning Capsule"))
 
@@ -393,12 +442,12 @@ def generate_pdf(notes_data, font_theme):
         colWidths=450)
 
     capsule_table.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#E0F7FA")),
-        ("BOX",(0,0),(-1,-1),1,colors.black),
-        ("LEFTPADDING",(0,0),(-1,-1),12),
-        ("RIGHTPADDING",(0,0),(-1,-1),12),
-        ("TOPPADDING",(0,0),(-1,-1),10),
-        ("BOTTOMPADDING",(0,0),(-1,-1),10),]))
+    ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#E3F2FD")),
+    ("BOX",(0,0),(-1,-1),1,colors.black),
+    ("LEFTPADDING",(0,0),(-1,-1),14),
+    ("RIGHTPADDING",(0,0),(-1,-1),14),
+    ("TOPPADDING",(0,0),(-1,-1),12),
+    ("BOTTOMPADDING",(0,0),(-1,-1),12)]))
 
     elements.append(Spacer(1,10))
     elements.append(capsule_table)
