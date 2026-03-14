@@ -436,7 +436,7 @@ def generate_pdf(notes_data, font_theme):
 tab1, tab2 = st.tabs(["Fetch Opinions", "Generate Notes"])
 
 with tab1:
-    if st.button("Fetch Top Opinions"):
+    if st.button("Fetch Top Opinions", key="btn_fetch"):
         with st.spinner("Fetching..."):
             st.session_state["articles"] = scrape_opinions()
             st.success("Fetched Successfully")
@@ -455,7 +455,7 @@ with tab2:
     font_theme = st.selectbox("Select Font Theme", ["Classic Serif", "Modern Sans"])
 
     if "selected_articles" in st.session_state and st.session_state["selected_articles"]:
-        if st.button("Generate CSS Notes"):
+        if st.button("Generate CSS Notes", key="btn_generate"):
             results = []
             with st.spinner("Generating..."):
                 for art in st.session_state["selected_articles"]:
