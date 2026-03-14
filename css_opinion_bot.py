@@ -215,6 +215,17 @@ def format_capsule_text(text):
         cleaned.append(line)
     return "<br/>".join(cleaned)
 
+
+# =========================
+# CAPSULE CACHE
+# =========================
+def get_daily_capsule():
+    today_key = datetime.now().strftime("%Y-%m-%d")
+    if "capsule_date" not in st.session_state or st.session_state["capsule_date"] != today_key:
+        st.session_state["capsule"] = learning_capsule()
+        st.session_state["capsule_date"] = today_key
+    return st.session_state["capsule"]
+
 # =========================
 # CAPSULE PDF GENERATION WITH CARTOON
 # =========================
