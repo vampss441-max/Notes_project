@@ -169,7 +169,7 @@ Article:
 def learning_capsule():
 
     prompt = f"""
-Create a Daily Learning Capsule for CSS students.
+Create a Daily Learning Capsule for CSS competitive exam students.
 
 Date: {today}
 
