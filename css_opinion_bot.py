@@ -172,7 +172,12 @@ def learning_capsule():
 Create a Daily Learning Capsule for CSS competitive exam students.
 
 Date: {today}
-
+STRICT RULES:
+- Only provide the sections listed below.
+- Do NOT add any introduction.
+- Do NOT add any conclusion.
+- Do NOT add explanations outside the sections.
+- End the response immediately after the Quote of the Day.
 Sections:
 
 Idiom of the Day
