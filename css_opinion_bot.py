@@ -19,9 +19,6 @@ from datetime import datetime
 import io
 import os
 import random
-from dotenv import load_dotenv
-import hashlib
-
 
 # =========================
 # DATE
@@ -41,7 +38,6 @@ if not api_key:
     st.error("Groq API key is not set! Please add GROK_API_KEY in Streamlit Secrets.")
     st.stop()
 client = Groq(api_key=api_key)
-
 FAST_MODEL = "llama-3.1-8b-instant"
 
 # =========================
@@ -55,7 +51,7 @@ def scrape_opinions():
     articles = []
     list_items = soup.find_all("h2", class_="story__title")
 
-    for link_tag in list_items[:6]:  # Adjust number if needed
+    for link_tag in list_items[:6]:
         title = link_tag.text.strip()
         article_url = link_tag.find("a")["href"]
 
@@ -83,7 +79,7 @@ def scrape_opinions():
     return articles
 
 # =========================
-# RANDOM ANALYTICAL SENTENCES (Bonus)
+# RANDOM ANALYTICAL SENTENCES
 # =========================
 ANALYTICAL_SENTENCES = [
     "Understanding this debate requires examining the broader geopolitical context.",
@@ -97,12 +93,10 @@ ANALYTICAL_SENTENCES = [
 # CSS NOTES GENERATION
 # =========================
 def generate_css_notes(article, mode):
-
     structure = "Use short analytical paragraph followed by structured bullet points." \
         if mode=="Bullet Dominant Hybrid" \
         else "Use paragraph-dominant analysis with limited structured bullets."
 
-    # Full enhanced prompt including examiner insights and human-style improvements
     prompt = f"""
 You are a senior FPSC CSS examiner.
 
@@ -151,22 +145,15 @@ Article:
     )
 
     notes_text = response.choices[0].message.content
-
-    # Remove unnecessary AI-style phrasal verb notes
     cleaned_notes = "\n".join([line for line in notes_text.split("\n")
                                if "Note: the phrasal verbs" not in line])
     return cleaned_notes
 
 # =========================
-# =========================
-# =========================
 # LEARNING CAPSULE
 # =========================
-
 def learning_capsule():
-
     today = datetime.now().strftime("%Y-%m-%d")
-
     prompt = f"""
 Create a Daily Learning Capsule for CSS students.
 
@@ -192,68 +179,45 @@ One surprising fact.
 
 Quote of the Day
 """
-
     res = client.chat.completions.create(
         model=FAST_MODEL,
         messages=[{"role":"user","content":prompt}],
         temperature=1
     )
-
     return res.choices[0].message.content
-
 
 # =========================
 # CAPSULE CACHE
 # =========================
-
 def get_daily_capsule():
-
     today_key = datetime.now().strftime("%Y-%m-%d")
-
     if "capsule_date" not in st.session_state or st.session_state["capsule_date"] != today_key:
-
         st.session_state["capsule"] = learning_capsule()
         st.session_state["capsule_date"] = today_key
-
     return st.session_state["capsule"]
-
 
 # =========================
 # FORMAT CAPSULE TEXT
 # =========================
-
 def format_capsule_text(text):
-
     lines = text.split("\n")
     cleaned = []
-
     for line in lines:
-
         line = line.replace("**","").strip()
-
         if not line:
             cleaned.append("<br/>")
             continue
-
         if ":" in line:
             parts = line.split(":",1)
             line = f"<b>{parts[0]}</b>: {parts[1]}"
-
         cleaned.append(line)
-
     return "<br/>".join(cleaned)
 
-
-
-
-
-
-
+# =========================
 # FOOTER
 # =========================
 def add_footer(canvas_obj, doc):
     width, height = A4
-
     if os.path.exists("logo.png"):
         canvas_obj.saveState()
         canvas_obj.setFillAlpha(0.06)
@@ -266,7 +230,6 @@ def add_footer(canvas_obj, doc):
             mask='auto'
         )
         canvas_obj.restoreState()
-
     canvas_obj.setStrokeColor(colors.black)
     canvas_obj.line(50, 35, width - 50, 35)
     canvas_obj.setFont("Times-Roman", 9)
@@ -277,18 +240,13 @@ def add_footer(canvas_obj, doc):
 # PDF GENERATION
 # =========================
 def generate_pdf(notes_data, font_theme):
-
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=65, leftMargin=65, topMargin=80, bottomMargin=60)
     elements = []
     styles = getSampleStyleSheet()
 
-    if font_theme == "Classic Serif":
-        base_font = "Times-Roman"
-        bold_font = "Times-Bold"
-    else:
-        base_font = "Helvetica"
-        bold_font = "Helvetica-Bold"
+    base_font = "Times-Roman" if font_theme=="Classic Serif" else "Helvetica"
+    bold_font = "Times-Bold" if font_theme=="Classic Serif" else "Helvetica-Bold"
 
     article_title = ParagraphStyle(
         name="ArticleTitle", parent=styles["Heading2"], fontName=bold_font,
@@ -318,9 +276,7 @@ def generate_pdf(notes_data, font_theme):
         leftIndent=0, rightIndent=0, spaceBefore=4, spaceAfter=4
     )
 
-    # =========================
     # COVER
-    # =========================
     elements.append(Spacer(1, 1.5 * inch))
     if os.path.exists("logo.png"):
         img = Image("logo.png", width=3*inch, height=3*inch)
@@ -331,9 +287,7 @@ def generate_pdf(notes_data, font_theme):
     elements.append(Paragraph(f"Dawn Newspaper | {today}", body_style))
     elements.append(PageBreak())
 
-    # =========================
     # TABLE OF CONTENTS
-    # =========================
     toc_data = [["Title", "Author", "Page"]]
     for i, item in enumerate(notes_data):
         toc_data.append([item["title"], item["author"], str(i + 3)])
@@ -350,9 +304,7 @@ def generate_pdf(notes_data, font_theme):
     elements.append(toc_table)
     elements.append(PageBreak())
 
-    # =========================
-        # CONTENT
-    # =========================
+    # CONTENT
     for item in notes_data:
         elements.append(Paragraph(item["title"], article_title))
         elements.append(Paragraph(f"Author: {item['author']}", body_style))
@@ -365,10 +317,8 @@ def generate_pdf(notes_data, font_theme):
                 elements.append(Spacer(1, 0.1 * inch))
                 continue
 
-            # Remove leading numbers/dots for headings
             line_no_num = ''.join([c for c in clean_line if not c.isdigit() and c != '.']).strip()
 
-            # Highlight section headings
             if any(line_no_num.lower().startswith(sec.lower()) for sec in [
                 "context and background", "core issue", "key arguments", "counter-arguments",
                 "important facts", "analytical evaluation", "way forward",
@@ -381,7 +331,6 @@ def generate_pdf(notes_data, font_theme):
                 elements.append(Paragraph(line_no_num, style_to_use))
                 continue
 
-            # Highlight phrasal verbs or vocabulary
             if ":" in clean_line:
                 parts = clean_line.split(":", 1)
                 term = parts[0].strip()
@@ -389,7 +338,6 @@ def generate_pdf(notes_data, font_theme):
                 elements.append(Paragraph(f"<b>{term}:</b> {explanation}", phrasal_style))
                 continue
 
-            # Bulleted list items
             if clean_line.startswith("*") or clean_line[0].isdigit():
                 bullet_text = clean_line.lstrip("*0123456789. ").strip()
                 bullet_buffer.append(ListItem(Paragraph(bullet_text, body_style)))
@@ -402,15 +350,12 @@ def generate_pdf(notes_data, font_theme):
             elements.append(Paragraph(clean_line, body_style))
 
         elements.append(PageBreak())
-    
-    
-    capsule=get_daily_capsule()
 
+    capsule = get_daily_capsule()
     capsule_table = Table(
-        [[Paragraph(format_capsule_text(capsule),body_style)]],
+        [[Paragraph(format_capsule_text(capsule), body_style)]],
         colWidths=450
     )
-
     capsule_table.setStyle(TableStyle([
         ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#E3F2FD")),
         ("BOX",(0,0),(-1,-1),1,colors.black),
@@ -419,17 +364,14 @@ def generate_pdf(notes_data, font_theme):
         ("TOPPADDING",(0,0),(-1,-1),12),
         ("BOTTOMPADDING",(0,0),(-1,-1),12)
     ]))
-
-    elements.append(Paragraph("Daily Learning Capsule",article_title))
+    elements.append(Paragraph("Daily Learning Capsule", article_title))
     elements.append(Spacer(1,10))
     elements.append(capsule_table)
-        
 
     doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer)
     buffer.seek(0)
     return buffer
 
-# ========================
 # =========================
 # STREAMLIT UI
 # =========================
@@ -439,7 +381,7 @@ with tab1:
     if st.button("Fetch Top Opinions", key="btn_fetch"):
         with st.spinner("Fetching..."):
             st.session_state["articles"] = scrape_opinions()
-            st.success("Fetched Successfully")
+        st.success("Fetched Successfully")
 
     if "articles" in st.session_state:
         st.subheader("Preview & Select Articles")
@@ -464,53 +406,20 @@ with tab2:
                 st.session_state["notes"] = results
             st.success("Notes Generated")
 
-    # =========================
-# =========================
-# STREAMLIT UI
-# =========================
+if "notes" in st.session_state:
+    st.subheader("Generated CSS Notes")
+    for item in st.session_state["notes"]:
+        with st.expander(item["title"], expanded=True):
+            st.markdown(item["notes"])
 
-tab1, tab2 = st.tabs(["Fetch Opinions", "Generate Notes"])
+    pdf_buffer = generate_pdf(
+        st.session_state["notes"],
+        font_theme
+    )
 
-with tab1:
-    if st.button("Fetch Top Opinions"):
-        with st.spinner("Fetching..."):
-            st.session_state["articles"] = scrape_opinions()
-        st.success("Fetched Successfully")
-
-    if "articles" in st.session_state:
-        st.subheader("Preview & Select Articles")
-        selected_articles = []
-        for i, art in enumerate(st.session_state["articles"]):
-            if st.checkbox(f"{art['title']} - {art['author']}", value=True):
-                st.write(art['content'][:400] + "...")
-                selected_articles.append(art)
-        st.session_state["selected_articles"] = selected_articles
-
-with tab2:
-    mode = st.selectbox("Select Notes Mode", ["Bullet Dominant Hybrid", "Paragraph Dominant Hybrid"])
-    font_theme = st.selectbox("Select Font Theme", ["Classic Serif", "Modern Sans"])
-
-    if "selected_articles" in st.session_state and st.session_state["selected_articles"]:
-        if st.button("Generate CSS Notes"):
-            results = []
-            with st.spinner("Generating..."):
-                for art in st.session_state["selected_articles"]:
-                    notes = generate_css_notes(art, mode)
-                    results.append({"title": art["title"], "notes": notes, "author": art["author"]})
-                st.session_state["notes"] = results
-            st.success("Notes Generated")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    st.download_button(
+        "Download PDF",
+        pdf_buffer,
+        file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
+        mime="application/pdf"
+    )
