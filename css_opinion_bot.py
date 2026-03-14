@@ -241,7 +241,12 @@ def add_footer(canvas_obj, doc):
 # =========================
 def generate_pdf(notes_data, font_theme):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=65, leftMargin=65, topMargin=80, bottomMargin=60)
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=65, leftMargin=65,
+        topMargin=80, bottomMargin=60
+    )
     elements = []
     styles = getSampleStyleSheet()
 
@@ -276,7 +281,9 @@ def generate_pdf(notes_data, font_theme):
         leftIndent=0, rightIndent=0, spaceBefore=4, spaceAfter=4
     )
 
+    # =========================
     # COVER
+    # =========================
     elements.append(Spacer(1, 1.5 * inch))
     if os.path.exists("logo.png"):
         img = Image("logo.png", width=3*inch, height=3*inch)
@@ -287,7 +294,9 @@ def generate_pdf(notes_data, font_theme):
     elements.append(Paragraph(f"Dawn Newspaper | {today}", body_style))
     elements.append(PageBreak())
 
+    # =========================
     # TABLE OF CONTENTS
+    # =========================
     toc_data = [["Title", "Author", "Page"]]
     for i, item in enumerate(notes_data):
         toc_data.append([item["title"], item["author"], str(i + 3)])
@@ -304,7 +313,9 @@ def generate_pdf(notes_data, font_theme):
     elements.append(toc_table)
     elements.append(PageBreak())
 
+    # =========================
     # CONTENT
+    # =========================
     for item in notes_data:
         elements.append(Paragraph(item["title"], article_title))
         elements.append(Paragraph(f"Author: {item['author']}", body_style))
@@ -351,23 +362,19 @@ def generate_pdf(notes_data, font_theme):
 
         elements.append(PageBreak())
 
+    # =========================
+    # DAILY LEARNING CAPSULE
+    # =========================
     capsule = get_daily_capsule()
-    capsule_table = Table(
-        [[Paragraph(format_capsule_text(capsule), body_style)]],
-        colWidths=450
-    )
-    capsule_table.setStyle(TableStyle([
-        ("BACKGROUND",(0,0),(-1,-1),colors.HexColor("#E3F2FD")),
-        ("BOX",(0,0),(-1,-1),1,colors.black),
-        ("LEFTPADDING",(0,0),(-1,-1),14),
-        ("RIGHTPADDING",(0,0),(-1,-1),14),
-        ("TOPPADDING",(0,0),(-1,-1),12),
-        ("BOTTOMPADDING",(0,0),(-1,-1),12)
-    ]))
-    elements.append(Paragraph("Daily Learning Capsule", article_title))
-    elements.append(Spacer(1,10))
-    elements.append(capsule_table)
+    capsule_lines = format_capsule_text(capsule).split("<br/>")
+    elements.append(Paragraph("Daily Learning Capsule", section_heading))  # highlighted heading
+    elements.append(Spacer(1, 10))
+    for line in capsule_lines:
+        elements.append(Paragraph(line, body_style))
 
+    # =========================
+    # BUILD PDF
+    # =========================
     doc.build(elements, onFirstPage=add_footer, onLaterPages=add_footer)
     buffer.seek(0)
     return buffer
