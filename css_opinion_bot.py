@@ -469,91 +469,36 @@ with tab2:
 # STREAMLIT UI
 # =========================
 
-tab1, tab2 = st.tabs(["Fetch Opinions","Generate Notes"])
-
+tab1, tab2 = st.tabs(["Fetch Opinions", "Generate Notes"])
 
 with tab1:
-
     if st.button("Fetch Top Opinions"):
-
         with st.spinner("Fetching..."):
-
             st.session_state["articles"] = scrape_opinions()
-
         st.success("Fetched Successfully")
 
     if "articles" in st.session_state:
-
-        st.subheader("Preview Articles")
-
-        selected=[]
-
-        for art in st.session_state["articles"]:
-
-            if st.checkbox(f"{art['title']} - {art['author']}",value=True):
-
-                st.write(art["content"][:400]+"...")
-
-                selected.append(art)
-
-        st.session_state["selected_articles"]=selected
-
+        st.subheader("Preview & Select Articles")
+        selected_articles = []
+        for i, art in enumerate(st.session_state["articles"]):
+            if st.checkbox(f"{art['title']} - {art['author']}", value=True):
+                st.write(art['content'][:400] + "...")
+                selected_articles.append(art)
+        st.session_state["selected_articles"] = selected_articles
 
 with tab2:
+    mode = st.selectbox("Select Notes Mode", ["Bullet Dominant Hybrid", "Paragraph Dominant Hybrid"])
+    font_theme = st.selectbox("Select Font Theme", ["Classic Serif", "Modern Sans"])
 
-    mode = st.selectbox(
-        "Notes Mode",
-        ["Bullet Dominant Hybrid","Paragraph Dominant Hybrid"]
-    )
-
-    font_theme = st.selectbox(
-        "Font Theme",
-        ["Classic Serif","Modern Sans"]
-    )
-
-    if "selected_articles" in st.session_state:
-
+    if "selected_articles" in st.session_state and st.session_state["selected_articles"]:
         if st.button("Generate CSS Notes"):
-
-            results=[]
-
-            for art in st.session_state["selected_articles"]:
-
-                notes = generate_css_notes(art,mode)
-
-                results.append({
-                    "title":art["title"],
-                    "notes":notes,
-                    "author":art["author"]
-                })
-
-            st.session_state["notes"]=results
-
+            results = []
+            with st.spinner("Generating..."):
+                for art in st.session_state["selected_articles"]:
+                    notes = generate_css_notes(art, mode)
+                    results.append({"title": art["title"], "notes": notes, "author": art["author"]})
+                st.session_state["notes"] = results
             st.success("Notes Generated")
-
-
-if "notes" in st.session_state:
-
-    st.subheader("Generated CSS Notes")
-
-    for item in st.session_state["notes"]:
-
-        with st.expander(item["title"],expanded=True):
-
-            st.markdown(item["notes"])
-
-    pdf_buffer = generate_pdf(
-        st.session_state["notes"],
-        font_theme
-    )
-
-    st.download_button(
-        "Download PDF",
-        pdf_buffer,
-        file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
-        mime="application/pdf"
-    )
-
 
 
 
