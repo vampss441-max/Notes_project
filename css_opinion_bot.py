@@ -169,11 +169,13 @@ Article:
 def learning_capsule():
 
     prompt = f"""
-Create a Daily Learning Capsule for CSS competitive exam students.
+Create a Daily Learning Capsule for CSS competitive exam students.Facts must be globally recognized and historically/geographically accurate.
+Do not invent names of places or events.
 
 Date: {today}
 STRICT RULES:
 - Only provide the sections listed below.
+- Do not invent names of places or events
 - Do NOT add any introduction.
 - Do NOT add any conclusion.
 - Do NOT add explanations outside the sections.
