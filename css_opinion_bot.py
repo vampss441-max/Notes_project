@@ -452,8 +452,12 @@ def generate_pdf(notes_data, font_theme="Classic Serif"):
 # =========================
 
 def learning_capsule():
+
     prompt = f"""
 Create a Daily Learning Capsule for CSS competitive exam students.
+
+Facts must be globally recognized and historically/geographically accurate.
+Do not invent names of places, people, or events.
 
 Date: {today}
 
@@ -462,8 +466,10 @@ STRICT RULES:
 - Do NOT add any introduction.
 - Do NOT add any conclusion.
 - End response immediately after the Quote of the Day.
+- Keep answers concise and factual.
 
 Sections:
+
 Idiom of the Day
 Meaning
 Example sentence
@@ -482,16 +488,21 @@ One surprising fact.
 
 Quote of the Day
 """
+
     res = client.chat.completions.create(
         model=FAST_MODEL,
-        messages=[{"role":"user", "content": prompt}],
-        temperature=1
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4
     )
-    text = res.choices[0].message.content
-    if "This daily learning capsule" in text:
-        text = text.split("This daily learning capsule")[0]
-    return text.strip()
 
+    text = res.choices[0].message.content.strip()
+
+    # Remove possible intro text
+    if "Idiom of the Day" in text:
+        text = text[text.index("Idiom of the Day"):]
+
+    return text
+#Capsule Text
 def format_capsule_text(text):
     lines = text.split("\n")
     cleaned = []
@@ -516,27 +527,57 @@ def get_daily_capsule():
         st.session_state["capsule"] = learning_capsule()
         st.session_state["capsule_date"] = today_key
     return st.session_state["capsule"]
-
 # =========================
-# CAPSULE PDF G
+# CAPSULE PDF GENERATION
 # =========================
 def generate_capsule_pdf():
+
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=70, leftMargin=70, topMargin=70, bottomMargin=60)
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=65, leftMargin=65,
+        topMargin=80, bottomMargin=60
+    )
+
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(name="Title", parent=styles["Heading1"], alignment=1, fontSize=28, spaceAfter=20)
-    box_style = ParagraphStyle(name="Box", parent=styles["Normal"], fontSize=13, leading=20, backColor=colors.HexColor("#F4F6F7"), leftIndent=10, rightIndent=10, spaceBefore=10, spaceAfter=10)
-    normal_style = ParagraphStyle(name="NormalText", parent=styles["Normal"], fontSize=13, leading=20)
+
+    title_style = ParagraphStyle(
+        name="Title",
+        parent=styles["Heading1"],
+        alignment=1,
+        fontSize=22,
+        spaceAfter=20
+    )
+
+    body_style = ParagraphStyle(
+        name="Body",
+        parent=styles["Normal"],
+        fontSize=13,
+        leading=20,
+        spaceAfter=10
+    )
 
     elements = []
+
+    capsule = get_daily_capsule()
+    capsule_lines = format_capsule_text(capsule).split("<br/>")
+
     elements.append(Paragraph("Daily Learning Capsule", title_style))
-    elements.append(Paragraph(format_capsule_text(st.session_state["capsule_display"]), normal_style))
+    elements.append(Paragraph(today, body_style))
+    elements.append(Spacer(1, 20))
+
+    for line in capsule_lines:
+        elements.append(Paragraph(line, body_style))
+
     doc.build(elements)
+
     buffer.seek(0)
     return buffer
 
 #=========================
-  STREAMLIT UI
+  #STREAMLIT UI
 #=========================
 
 tab1, tab2, tab3 = st.tabs(["Fetch Opinions", "Generate Notes", "Daily Learning Capsule"])
@@ -558,27 +599,61 @@ with tab1:
 
 # ===== TAB 2 =====
 with tab2:
-    mode = st.selectbox("Select Notes Mode", ["Bullet Dominant Hybrid", "Paragraph Dominant Hybrid"])
-    font_theme = st.selectbox("Select Font Theme", ["Classic Serif", "Modern Sans"])
+    mode = st.selectbox(
+        "Select Notes Mode",
+        ["Bullet Dominant Hybrid", "Paragraph Dominant Hybrid"]
+    )
+
+    font_theme = st.selectbox(
+        "Select Font Theme",
+        ["Classic Serif", "Modern Sans"]
+    )
+
+    # Save theme to session state
+    st.session_state["font_theme"] = font_theme
 
     if "selected_articles" in st.session_state and st.session_state["selected_articles"]:
         if st.button("Generate CSS Notes"):
             results = []
+
             with st.spinner("Generating..."):
                 for art in st.session_state["selected_articles"]:
                     notes = generate_css_notes(art, mode)
-                    results.append({"title": art["title"], "notes": notes, "author": art["author"]})
-                st.session_state["notes"] = results
+
+                    results.append({
+                        "title": art["title"],
+                        "notes": notes,
+                        "author": art["author"]
+                    })
+
+            st.session_state["notes"] = results
             st.success("Notes Generated")
 
+# =========================
+# SHOW NOTES + DOWNLOAD PDF
+# =========================
+
 if "notes" in st.session_state:
+
     st.subheader("Generated CSS Notes")
+
     for item in st.session_state["notes"]:
         with st.expander(item["title"], expanded=True):
             st.markdown(item["notes"])
 
-    pdf_bytes = generate_pdf(st.session_state["notes"], font_theme)
-    st.download_button("Download PDF", pdf_bytes, file_name=f"Daily_Opinion_Notes_{file_date}.pdf", mime="application/pdf")
+    font_theme = st.session_state.get("font_theme", "Classic Serif")
+
+    pdf_bytes = generate_pdf(
+        st.session_state["notes"],
+        font_theme
+    )
+
+    st.download_button(
+        "Download PDF",
+        pdf_bytes,
+        file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
+        mime="application/pdf"
+    )
 
 # ===== TAB 3 =====
 with tab3:
