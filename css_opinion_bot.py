@@ -148,12 +148,303 @@ Article:
 # =========================
 # ORIGINAL ARTICLES PDF GENERATION RESTORED
 # =========================
+# FOOTER
+# =========================
+def add_footer(canvas_obj, doc):
+    width, height = A4
 
-def generate_pdf(notes_data, font_theme):
-    # <-- Paste your full original generate_pdf function from first code here
-    # This will keep all your bullets, headings, summary boxes, etc intact.
+    # Watermark Logo
+    if os.path.exists("logo.png"):
+        canvas_obj.saveState()
+        canvas_obj.setFillAlpha(0.06)
+
+        canvas_obj.drawImage(
+            "logo.png",
+            width/2 - 180,
+            height/2 - 180,
+            width=360,
+            height=360,
+            mask='auto'
+        )
+
+        canvas_obj.restoreState()
+
+    # Footer Line
+    canvas_obj.setStrokeColor(colors.black)
+    canvas_obj.line(50, 35, width - 50, 35)
+
+    # Footer Text
+    canvas_obj.setFont("Times-Roman", 9)
+
+    canvas_obj.drawString(
+        50,
+        20,
+        f"Daily Opinions' Notes | {today}"
+    )
+
+    canvas_obj.drawRightString(
+        width - 50,
+        20,
+        f"Page {doc.page}"
+    )
+
+
+# =========================
+# PDF GENERATION
+# =========================
+def generate_pdf(notes_data, font_theme="Classic Serif"):
+
     buffer = io.BytesIO()
-    # (Original PDF building logic as in your first code)
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=65,
+        leftMargin=65,
+        topMargin=80,
+        bottomMargin=60
+    )
+
+    elements = []
+
+    styles = getSampleStyleSheet()
+
+    base_font = "Times-Roman" if font_theme == "Classic Serif" else "Helvetica"
+    bold_font = "Times-Bold" if font_theme == "Classic Serif" else "Helvetica-Bold"
+
+    # =========================
+    # STYLES
+    # =========================
+    article_title = ParagraphStyle(
+        name="ArticleTitle",
+        parent=styles["Heading2"],
+        fontName=bold_font,
+        fontSize=17,
+        spaceBefore=18,
+        spaceAfter=8
+    )
+
+    section_heading = ParagraphStyle(
+        name="SectionHeading",
+        parent=styles["Normal"],
+        fontName=bold_font,
+        fontSize=12,
+        leading=16,
+        spaceBefore=12,
+        spaceAfter=6,
+        textColor=colors.black,
+        backColor=colors.HexColor("#FFF176")
+    )
+
+    body_style = ParagraphStyle(
+        name="BodyStyle",
+        parent=styles["Normal"],
+        fontName=base_font,
+        fontSize=11.5,
+        leading=17,
+        spaceAfter=6
+    )
+
+    summary_box = ParagraphStyle(
+        name="SummaryBox",
+        parent=styles["Normal"],
+        fontName=base_font,
+        fontSize=11,
+        leading=14,
+        backColor=colors.HexColor("#E0F7FA"),
+        leftIndent=6,
+        rightIndent=6,
+        spaceBefore=4,
+        spaceAfter=8
+    )
+
+    phrasal_style = ParagraphStyle(
+        name="PhrasalStyle",
+        parent=styles["Normal"],
+        fontName=bold_font,
+        fontSize=11,
+        leading=14,
+        backColor=colors.HexColor("#FFF3E0"),
+        spaceBefore=4,
+        spaceAfter=4
+    )
+
+    # =========================
+    # COVER PAGE
+    # =========================
+    elements.append(Spacer(1, 1.5 * inch))
+
+    if os.path.exists("logo.png"):
+        img = RLImage("logo.png", width=3 * inch, height=3 * inch)
+        img.hAlign = "CENTER"
+        elements.append(img)
+
+    elements.append(Spacer(1, 0.5 * inch))
+
+    elements.append(Paragraph("Daily Opinions' Notes", article_title))
+
+    elements.append(
+        Paragraph(f"Dawn Newspaper | {today}", body_style)
+    )
+
+    elements.append(PageBreak())
+
+    # =========================
+    # TABLE OF CONTENTS
+    # =========================
+    toc_data = [["Title", "Author", "Page"]]
+
+    for i, item in enumerate(notes_data):
+        toc_data.append([
+            item["title"],
+            item["author"],
+            str(i + 3)
+        ])
+
+    toc_table = Table(
+        toc_data,
+        colWidths=[3 * inch, 2 * inch, 0.8 * inch]
+    )
+
+    toc_table.setStyle(TableStyle([
+
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#FFF176")),
+
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+
+        ("FONTNAME", (0, 0), (-1, -1), base_font),
+
+        ("FONTNAME", (0, 0), (-1, 0), bold_font),
+
+        ("ALIGN", (2, 1), (2, -1), "CENTER")
+    ]))
+
+    elements.append(Paragraph("Table of Contents", article_title))
+    elements.append(Spacer(1, 0.3 * inch))
+    elements.append(toc_table)
+    elements.append(PageBreak())
+
+    # =========================
+    # CONTENT
+    # =========================
+    for item in notes_data:
+
+        elements.append(Paragraph(item["title"], article_title))
+        elements.append(
+            Paragraph(f"Author: {item['author']}", body_style)
+        )
+
+        elements.append(Spacer(1, 0.2 * inch))
+
+        bullet_buffer = []
+
+        for line in item["notes"].split("\n"):
+
+            clean_line = line.strip().replace("**", "")
+
+            if not clean_line:
+                elements.append(Spacer(1, 0.1 * inch))
+                continue
+
+            line_no_num = ''.join([
+                c for c in clean_line
+                if not c.isdigit() and c != '.'
+            ]).strip()
+
+            sections = [
+                "context and background",
+                "core issue",
+                "key arguments",
+                "counter-arguments",
+                "important facts",
+                "analytical evaluation",
+                "way forward",
+                "possible questions",
+                "summary box",
+                "key vocabulary",
+                "phrasal verbs with explanation"
+            ]
+
+            if any(line_no_num.lower().startswith(sec) for sec in sections):
+
+                if bullet_buffer:
+                    elements.append(
+                        ListFlowable(
+                            bullet_buffer,
+                            bulletType="bullet",
+                            leftIndent=20
+                        )
+                    )
+                    bullet_buffer = []
+
+                style_to_use = summary_box if "summary box" in line_no_num.lower() else section_heading
+
+                elements.append(
+                    Paragraph(line_no_num, style_to_use)
+                )
+
+                continue
+
+            # Vocabulary / Phrasal
+            if ":" in clean_line:
+
+                parts = clean_line.split(":", 1)
+
+                term = parts[0].strip()
+                explanation = parts[1].strip()
+
+                elements.append(
+                    Paragraph(
+                        f"<b>{term}:</b> {explanation}",
+                        phrasal_style
+                    )
+                )
+
+                continue
+
+            # Bullet points
+            if clean_line.startswith("*") or clean_line[0].isdigit():
+
+                bullet_text = clean_line.lstrip("*0123456789. ").strip()
+
+                bullet_buffer.append(
+                    ListItem(
+                        Paragraph(bullet_text, body_style)
+                    )
+                )
+
+                continue
+
+            # Flush bullets
+            if bullet_buffer:
+
+                elements.append(
+                    ListFlowable(
+                        bullet_buffer,
+                        bulletType="bullet",
+                        leftIndent=20
+                    )
+                )
+
+                bullet_buffer = []
+
+            elements.append(
+                Paragraph(clean_line, body_style)
+            )
+
+        elements.append(PageBreak())
+
+    # =========================
+    # BUILD PDF
+    # =========================
+    doc.build(
+        elements,
+        onFirstPage=add_footer,
+        onLaterPages=add_footer
+    )
+
+    buffer.seek(0)
+
     return buffer
 
 # =========================
@@ -162,7 +453,7 @@ def generate_pdf(notes_data, font_theme):
 
 def learning_capsule():
     prompt = f"""
-Create a Daily Learning Capsule for CSS students.
+Create a Daily Learning Capsule for CSS competitive exam students.
 
 Date: {today}
 
@@ -227,9 +518,8 @@ def get_daily_capsule():
     return st.session_state["capsule"]
 
 # =========================
-# CAPSULE PDF GENERATION WITH CARTOON
+# CAPSULE PDF G
 # =========================
-
 def generate_capsule_pdf():
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=70, leftMargin=70, topMargin=70, bottomMargin=60)
@@ -239,33 +529,15 @@ def generate_capsule_pdf():
     normal_style = ParagraphStyle(name="NormalText", parent=styles["Normal"], fontSize=13, leading=20)
 
     elements = []
-
-    cartoon_path = "daily_capsule_cartoon.png"
-    if os.path.exists(cartoon_path):
-        img = RLImage(cartoon_path, width=5*inch, height=5*inch)
-        img.hAlign = 'CENTER'
-        elements.append(img)
-        elements.append(Spacer(1, 0.3*inch))
-
     elements.append(Paragraph("Daily Learning Capsule", title_style))
-    elements.append(Paragraph(today, normal_style))
-    elements.append(Spacer(1, 25))
-
-    capsule = get_daily_capsule()
-    lines = format_capsule_text(capsule).split("<br/>")
-    for line in lines:
-        if any(k in line for k in ["Idiom", "Word", "Country", "Did You Know", "Quote"]):
-            elements.append(Paragraph(line, box_style))
-        else:
-            elements.append(Paragraph(line, normal_style))
-
+    elements.append(Paragraph(format_capsule_text(st.session_state["capsule_display"]), normal_style))
     doc.build(elements)
     buffer.seek(0)
     return buffer
 
-# =========================
-# STREAMLIT UI TABS
-# =========================
+#=========================
+  STREAMLIT UI
+#=========================
 
 tab1, tab2, tab3 = st.tabs(["Fetch Opinions", "Generate Notes", "Daily Learning Capsule"])
 
@@ -305,15 +577,12 @@ if "notes" in st.session_state:
         with st.expander(item["title"], expanded=True):
             st.markdown(item["notes"])
 
-    pdf_buffer = generate_pdf(st.session_state["notes"], font_theme)  # ORIGINAL FUNCTION INTACT
-    st.download_button("Download PDF", pdf_buffer, file_name=f"Daily_Opinion_Notes_{file_date}.pdf", mime="application/pdf")
+    pdf_bytes = generate_pdf(st.session_state["notes"], font_theme)
+    st.download_button("Download PDF", pdf_bytes, file_name=f"Daily_Opinion_Notes_{file_date}.pdf", mime="application/pdf")
 
 # ===== TAB 3 =====
 with tab3:
     st.subheader("📘 Daily Learning Capsule")
-
-    if os.path.exists("daily_capsule_cartoon.png"):
-        st.image("daily_capsule_cartoon.png", use_column_width=True)
 
     if st.button("Generate Capsule"):
         capsule = get_daily_capsule()
@@ -322,5 +591,4 @@ with tab3:
     if "capsule_display" in st.session_state:
         capsule_text = format_capsule_text(st.session_state["capsule_display"])
         st.markdown(capsule_text, unsafe_allow_html=True)
-        capsule_pdf = generate_capsule_pdf()
-        st.download_button("Download Capsule PDF", capsule_pdf, file_name=f"Daily_Learning_Capsule_{file_date}.pdf", mime="application/pdf")
+
