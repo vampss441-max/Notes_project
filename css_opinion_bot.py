@@ -451,70 +451,84 @@ def generate_pdf(notes_data, font_theme="Classic Serif"):
 # DAILY LEARNING CAPSULE FUNCTIONS
 # =========================
 
+from datetime import datetime
+import random
+
 def learning_capsule():
 
-    prompt = f"""
-Create a Daily Learning Capsule for CSS competitive exam students.
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    seed = random.randint(1000,9999)
 
-Facts must be globally recognized and historically/geographically accurate.
-Do not invent names of places, people, or events.
+    prompt = f"""
+Create a Daily Learning Capsule for CSS competitive exam preparation.
 
 Date: {today}
+Seed: {seed}
 
 STRICT RULES:
-- Only provide the sections listed below.
-- Do NOT add any introduction.
-- Do NOT add any conclusion.
-- End response immediately after the Quote of the Day.
-- Keep answers concise and factual.
+- Only provide the sections listed below
+- No introduction
+- No conclusion
+- End after Quote of the Day
+- Keep responses concise
+- Ensure today's capsule is DIFFERENT from typical textbook examples
 
-Sections:
+Sections Format EXACTLY like this:
 
 Idiom of the Day
-Meaning
-Example sentence
+Meaning:
+Example:
 
 Word of the Day
-Meaning
-Example sentence
+Meaning:
+Example:
 
 Country Snapshot
-Country
-Capital
-Currency
+Country:
+Capital:
+Currency:
 
 Did You Know
-One surprising fact.
+(one surprising global fact)
 
 Quote of the Day
+(one quote from a historical figure)
+
+Ensure all facts are globally verified and accurate.
 """
 
     res = client.chat.completions.create(
         model=FAST_MODEL,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.4
+        temperature=0.7
     )
 
     text = res.choices[0].message.content.strip()
 
-    # Remove possible intro text
     if "Idiom of the Day" in text:
         text = text[text.index("Idiom of the Day"):]
 
     return text
 #Capsule Text
 def format_capsule_text(text):
+
     lines = text.split("\n")
     cleaned = []
+
     for line in lines:
-        line = line.replace("**", "").strip()
+
+        line = line.replace("**","").strip()
+
         if not line:
             cleaned.append("<br/>")
             continue
+
         if ":" in line:
             parts = line.split(":",1)
-            line = f"<b>{parts[0]}</b>: {parts[1]}"
+            line = f"<b>{parts[0]}</b>: {parts[1].strip()}"
+
         cleaned.append(line)
+
     return "<br/>".join(cleaned)
 
 
@@ -522,11 +536,16 @@ def format_capsule_text(text):
 # CAPSULE CACHE
 # =========================
 def get_daily_capsule():
-    today_key = datetime.now().strftime("%Y-%m-%d")
-    if "capsule_date" not in st.session_state or st.session_state["capsule_date"] != today_key:
-        st.session_state["capsule"] = learning_capsule()
-        st.session_state["capsule_date"] = today_key
-    return st.session_state["capsule"]
+
+    today_key = datetime.utcnow().strftime("%Y-%m-%d")
+
+    if "capsule_cache" not in st.session_state:
+        st.session_state["capsule_cache"] = {}
+
+    if today_key not in st.session_state["capsule_cache"]:
+        st.session_state["capsule_cache"][today_key] = learning_capsule()
+
+    return st.session_state["capsule_cache"][today_key]
 # =========================
 # CAPSULE PDF GENERATION
 # =========================
@@ -537,36 +556,40 @@ def generate_capsule_pdf():
     doc = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        rightMargin=65, leftMargin=65,
-        topMargin=80, bottomMargin=60
+        rightMargin=70,
+        leftMargin=70,
+        topMargin=80,
+        bottomMargin=60
     )
 
     styles = getSampleStyleSheet()
 
     title_style = ParagraphStyle(
-        name="Title",
+        "Title",
         parent=styles["Heading1"],
         alignment=1,
         fontSize=22,
-        spaceAfter=20
+        spaceAfter=25
     )
 
     body_style = ParagraphStyle(
-        name="Body",
+        "Body",
         parent=styles["Normal"],
         fontSize=13,
         leading=20,
-        spaceAfter=10
+        spaceAfter=12
     )
 
     elements = []
 
-    capsule = get_daily_capsule()
-    capsule_lines = format_capsule_text(capsule).split("<br/>")
+    today = datetime.utcnow().strftime("%d %B %Y")
 
     elements.append(Paragraph("Daily Learning Capsule", title_style))
     elements.append(Paragraph(today, body_style))
-    elements.append(Spacer(1, 20))
+    elements.append(Spacer(1,20))
+
+    capsule = get_daily_capsule()
+    capsule_lines = format_capsule_text(capsule).split("<br/>")
 
     for line in capsule_lines:
         elements.append(Paragraph(line, body_style))
