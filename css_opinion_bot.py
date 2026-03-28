@@ -48,43 +48,31 @@ FAST_MODEL = "llama-3.1-8b-instant"
 
 def scrape_opinions():
     url = "https://www.dawn.com/opinion"
-    response = requests.get(url)
+    headers = {"User-Agent": "Mozilla/5.0"}  # avoid bot blocking
+    response = requests.get(url, headers=headers)
     soup = BeautifulSoup(response.text, "html.parser")
 
     articles = []
-    list_items = soup.select("h2.story__title, h3.story__title")
+
+    # updated selector for robustness
+    list_items = soup.select("h2.story__title a, h3.story__title a, h2.story__headline a, h3.story__headline a")
 
     for link_tag in list_items[:6]:
-        title = link_tag.text.strip()
-
-        a_tag = link_tag.find("a")
-        if not a_tag:
-            continue
-
-        article_url = a_tag.get("href")
+        title = link_tag.get_text(strip=True)
+        article_url = link_tag.get("href")
         if not article_url:
             continue
 
-        article_page = requests.get(article_url)
+        article_page = requests.get(article_url, headers=headers)
         article_soup = BeautifulSoup(article_page.text, "html.parser")
 
         paragraphs = article_soup.find_all("p")
         content = " ".join([p.text for p in paragraphs])
 
-        author_tag = article_soup.select_one(".byline__name")
-        if author_tag:
-            author = author_tag.get_text(strip=True)
-        else:
-            alt_author = article_soup.select_one(".story__byline")
-            author = alt_author.get_text(strip=True) if alt_author else "Unknown"
+        author_tag = article_soup.select_one(".byline__name, .story__byline")
+        author = author_tag.get_text(strip=True) if author_tag else "Unknown"
 
-        articles.append({
-            "title": title,
-            "content": content,
-            "author": author
-        })
-
-        time.sleep(0.1)
+        articles.append({"title": title, "content": content, "author": author})
 
     return articles
 # =========================
