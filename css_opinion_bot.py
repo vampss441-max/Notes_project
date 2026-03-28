@@ -45,7 +45,6 @@ FAST_MODEL = "llama-3.1-8b-instant"
 # =========================
 # SCRAPER (UNCHANGED)
 # =========================
-
 def scrape_opinions():
     url = "https://www.dawn.com/opinion"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -54,31 +53,32 @@ def scrape_opinions():
 
     articles = []
 
-    # find all links that look like direct article links under the Opinion section
-    for link in soup.find_all("a", href=True):
-        href = link["href"]
-        # filter Opinion article URLs
-        if "/news/" in href and "opinion" not in href:
-            full_url = href if href.startswith("http") else "https://www.dawn.com" + href
-            title = link.get_text(strip=True)
+    # Find all headings that contain links
+    heading_links = soup.select("h2 a, h3 a")
 
-            if not title:
-                continue
+    for link_tag in heading_links[:12]:  # grab more in case some are ads/irrelevant
+        title = link_tag.get_text(strip=True)
+        article_url = link_tag.get("href")
+        if not article_url:
+            continue
+        article_url = article_url if article_url.startswith("http") else "https://www.dawn.com" + article_url
 
-            # fetch each article page
-            page = requests.get(full_url, headers=headers)
-            page_soup = BeautifulSoup(page.text, "html.parser")
+        # Fetch the article page
+        article_page = requests.get(article_url, headers=headers)
+        article_soup = BeautifulSoup(article_page.text, "html.parser")
 
-            paragraphs = page_soup.find_all("p")
-            content = " ".join(p.text for p in paragraphs)
+        paragraphs = article_soup.find_all("p")
+        content = " ".join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
 
-            author_tag = page_soup.select_one(".byline__name, .story__byline")
-            author = author_tag.get_text(strip=True) if author_tag else "Unknown"
+        author_tag = article_soup.select_one(".byline__name, .story__byline")
+        author = author_tag.get_text(strip=True) if author_tag else "Unknown"
 
-            articles.append({"title": title, "content": content, "author": author})
+        articles.append({"title": title, "content": content, "author": author})
 
-            if len(articles) >= 6:
-                break
+        if len(articles) >= 6:
+            break
+
+        time.sleep(0.1)
 
     return articles
 # =========================
