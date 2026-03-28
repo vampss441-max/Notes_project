@@ -619,17 +619,24 @@ tab1, tab2, tab3 = st.tabs(["Fetch Opinions", "Generate Notes", "Daily Learning 
 
 # ===== TAB 1 =====
 with tab1:
+    # Safely show articles count
+    st.write("Articles found:", len(st.session_state.get("articles", [])))
+
     if st.button("Fetch Top Opinions"):
         with st.spinner("Fetching..."):
             st.session_state["articles"] = scrape_opinions()
         st.success("Fetched Successfully")
 
-    if "articles" in st.session_state:
+    # Display previews only if articles exist
+    if "articles" in st.session_state and st.session_state["articles"]:
         selected_articles = []
-        for art in st.session_state["articles"]:
-            if st.checkbox(f"{art['title']} - {art['author']}", value=True):
+
+        for i, art in enumerate(st.session_state["articles"]):
+            key = f"article_{i}"  # unique key to maintain checkbox state
+            if st.checkbox(f"{art['title']} - {art['author']}", value=True, key=key):
                 st.write(art['content'][:400] + "...")
                 selected_articles.append(art)
+
         st.session_state["selected_articles"] = selected_articles
 
 # ===== TAB 2 =====
