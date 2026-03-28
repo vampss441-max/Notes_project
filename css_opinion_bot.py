@@ -52,11 +52,18 @@ def scrape_opinions():
     soup = BeautifulSoup(response.text, "html.parser")
 
     articles = []
-    list_items = soup.find_all("h2", class_="story__title")
+    list_items = soup.select("h2.story__title, h3.story__title")
 
     for link_tag in list_items[:6]:
         title = link_tag.text.strip()
-        article_url = link_tag.find("a")["href"]
+
+        a_tag = link_tag.find("a")
+        if not a_tag:
+            continue
+
+        article_url = a_tag.get("href")
+        if not article_url:
+            continue
 
         article_page = requests.get(article_url)
         article_soup = BeautifulSoup(article_page.text, "html.parser")
@@ -71,11 +78,15 @@ def scrape_opinions():
             alt_author = article_soup.select_one(".story__byline")
             author = alt_author.get_text(strip=True) if alt_author else "Unknown"
 
-        articles.append({"title": title, "content": content, "author": author})
+        articles.append({
+            "title": title,
+            "content": content,
+            "author": author
+        })
+
         time.sleep(0.1)
 
     return articles
-
 # =========================
 # RANDOM ANALYTICAL SENTENCES
 # =========================
@@ -472,6 +483,7 @@ STRICT RULES:
 - End after Quote of the Day
 - Keep responses concise
 - Ensure today's capsule is DIFFERENT from typical textbook examples
+- Do not repeat the data again,try to generate new
 
 Sections Format EXACTLY like this:
 
