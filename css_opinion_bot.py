@@ -48,31 +48,37 @@ FAST_MODEL = "llama-3.1-8b-instant"
 
 def scrape_opinions():
     url = "https://www.dawn.com/opinion"
-    headers = {"User-Agent": "Mozilla/5.0"}  # avoid bot blocking
+    headers = {"User-Agent": "Mozilla/5.0"}
     response = requests.get(url, headers=headers)
     soup = BeautifulSoup(response.text, "html.parser")
 
     articles = []
 
-    # updated selector for robustness
-    list_items = soup.select("h2.story__title a, h3.story__title a, h2.story__headline a, h3.story__headline a")
+    # find all links that look like direct article links under the Opinion section
+    for link in soup.find_all("a", href=True):
+        href = link["href"]
+        # filter Opinion article URLs
+        if "/news/" in href and "opinion" not in href:
+            full_url = href if href.startswith("http") else "https://www.dawn.com" + href
+            title = link.get_text(strip=True)
 
-    for link_tag in list_items[:6]:
-        title = link_tag.get_text(strip=True)
-        article_url = link_tag.get("href")
-        if not article_url:
-            continue
+            if not title:
+                continue
 
-        article_page = requests.get(article_url, headers=headers)
-        article_soup = BeautifulSoup(article_page.text, "html.parser")
+            # fetch each article page
+            page = requests.get(full_url, headers=headers)
+            page_soup = BeautifulSoup(page.text, "html.parser")
 
-        paragraphs = article_soup.find_all("p")
-        content = " ".join([p.text for p in paragraphs])
+            paragraphs = page_soup.find_all("p")
+            content = " ".join(p.text for p in paragraphs)
 
-        author_tag = article_soup.select_one(".byline__name, .story__byline")
-        author = author_tag.get_text(strip=True) if author_tag else "Unknown"
+            author_tag = page_soup.select_one(".byline__name, .story__byline")
+            author = author_tag.get_text(strip=True) if author_tag else "Unknown"
 
-        articles.append({"title": title, "content": content, "author": author})
+            articles.append({"title": title, "content": content, "author": author})
+
+            if len(articles) >= 6:
+                break
 
     return articles
 # =========================
