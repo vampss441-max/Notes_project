@@ -45,121 +45,65 @@ FAST_MODEL = "llama-3.1-8b-instant"
 # =========================
 # SCRAPER (UNCHANGED)
 # =========================
-
-# =========================
-# RANDOM ANALYTICAL SENTENCES
-# =========================
 def scrape_opinions():
-    
     url = "https://www.dawn.com/opinion"
 
     headers = {
-        "User-Agent": "Mozilla/5.0",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/115.0 Safari/537.36",
         "Accept-Language": "en-US,en;q=0.9"
     }
 
     session = requests.Session()
     response = session.get(url, headers=headers)
-
     if response.status_code != 200:
-        print("Failed main request")
+        print("Failed to fetch Dawn Opinion page")
         return []
 
     soup = BeautifulSoup(response.text, "html.parser")
-
     articles = []
 
-    # =========================
-    # 🥇 METHOD 1: Article tags
-    # =========================
-    cards = soup.find_all("article")
+    # 🥇 Primary: story__title links
+    for tag in soup.select(".story__title a"):
+        title = tag.get_text(strip=True)
+        link = tag.get("href")
+        if title and link and "/opinion/" in link:
+            articles.append((title, link))
 
-    for card in cards:
-        a_tag = card.find("a", href=True)
-        if not a_tag:
-            continue
-
-        title = a_tag.get_text(strip=True)
-        link = a_tag["href"]
-
-        if not title or len(title) < 15:
-            continue
-
-        articles.append((title, link))
-
-    # =========================
-    # 🥈 METHOD 2: Headings
-    # =========================
-    if len(articles) < 3:
-        print("Fallback 1 activated")
-
+    # 🥈 Fallback: h2/h3 links
+    if len(articles) < 6:
         for tag in soup.select("h2 a, h3 a"):
             title = tag.get_text(strip=True)
             link = tag.get("href")
-
-            if title and link:
+            if title and link and "/opinion/" in link:
                 articles.append((title, link))
 
-    # =========================
-    # 🥉 METHOD 3: ALL LINKS FILTER
-    # =========================
-    if len(articles) < 3:
-        print("Fallback 2 activated")
-
-        for tag in soup.find_all("a", href=True):
-            href = tag["href"]
-            title = tag.get_text(strip=True)
-
-            if "/news/" in href and len(title) > 20:
-                articles.append((title, href))
-
-    # =========================
-    # 🔄 CLEAN + FETCH CONTENT
-    # =========================
-    # =========================
-    print("Raw extracted links:", len(articles))
     final_articles = []
     seen = set()
-
     for title, link in articles:
-
         if len(final_articles) >= 6:
             break
-
         full_url = link if link.startswith("http") else "https://www.dawn.com" + link
-
         if full_url in seen:
             continue
-
         seen.add(full_url)
 
         try:
             page = session.get(full_url, headers=headers)
-            soup_page = BeautifulSoup(page.text, "html.parser")
-
-            paragraphs = soup_page.find_all("p")
-            content = " ".join(
-                p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)
-            )
-
-            if len(content) < 300:
+            page_soup = BeautifulSoup(page.text, "html.parser")
+            paragraphs = page_soup.find_all("p")
+            content = " ".join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
+            if len(content) < 200:
                 continue
-
-            author_tag = soup_page.select_one(".byline__name, .story__byline")
+            author_tag = page_soup.select_one(".byline__name, .story__byline")
             author = author_tag.get_text(strip=True) if author_tag else "Unknown"
-
-            final_articles.append({
-                "title": title,
-                "content": content,
-                "author": author
-            })
-
+            final_articles.append({"title": title, "content": content, "author": author})
             time.sleep(0.2)
-
         except Exception as e:
-            print("Skipping:", e)
+            print("Skipping article:", e)
             continue
 
+    print("Articles fetched:", len(final_articles))
     return final_articles
 ANALYTICAL_SENTENCES = [
     "Understanding this debate requires examining the broader geopolitical context.",
