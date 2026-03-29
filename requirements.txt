@@ -11,3 +11,4 @@ groq
 openai
 reportlab
 playwright 
+chromium
