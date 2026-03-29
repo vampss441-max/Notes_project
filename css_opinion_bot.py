@@ -693,9 +693,9 @@ with tab1:
         with st.spinner("Fetching..."):
         st.session_state["articles"] = scrape_opinions()
 
-    if not st.session_state["articles"]:
+        if not st.session_state["articles"]:
         st.error("No articles found! Fallback failed.")
-    else:
+        else:
         st.success("Fetched Successfully")
 
     # Display previews only if articles exist
