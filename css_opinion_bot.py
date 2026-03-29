@@ -116,6 +116,8 @@ def scrape_opinions():
     # =========================
     # 🔄 CLEAN + FETCH CONTENT
     # =========================
+    # =========================
+    print("Raw extracted links:", len(articles))
     final_articles = []
     seen = set()
 
@@ -159,13 +161,12 @@ def scrape_opinions():
             continue
 
     return final_articles
+ANALYTICAL_SENTENCES = [
     "Understanding this debate requires examining the broader geopolitical context.",
     "This issue reflects deeper tensions in global power politics.",
     "The article raises important questions about the structure of the international system.",
     "Analyzing this perspective helps highlight the link between theory and policy.",
-    "This argument demonstrates the recurring tension between power and ethics in international affairs."
-]
-
+    "This argument demonstrates the recurring tension between power and ethics in international affairs."]
 # =========================
 # CSS NOTES GENERATION (UNCHANGED)
 # =========================
