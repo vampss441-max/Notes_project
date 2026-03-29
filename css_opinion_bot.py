@@ -690,7 +690,7 @@ tab1, tab2, tab3 = st.tabs(["Fetch Opinions", "Generate Notes", "Daily Learning 
 with tab1:
     st.write("Articles found:", len(st.session_state.get("articles", [])))
     if st.button("Fetch Top Opinions"):
-    with st.spinner("Fetching..."):
+        with st.spinner("Fetching..."):
         st.session_state["articles"] = scrape_opinions()
 
     if not st.session_state["articles"]:
