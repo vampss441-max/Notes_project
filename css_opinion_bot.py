@@ -45,49 +45,123 @@ FAST_MODEL = "llama-3.1-8b-instant"
 # =========================
 # SCRAPER (UNCHANGED)
 # =========================
-def scrape_opinions():
+
+# =========================
+# RANDOM ANALYTICAL SENTENCES
+# =========================
+ANALYTICAL_SENTENCES = [def scrape_opinions():
+    import requests
+    from bs4 import BeautifulSoup
+    import time
+
+    url = "https://www.dawn.com/opinion"
+
     headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-    "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent": "Mozilla/5.0",
+        "Accept-Language": "en-US,en;q=0.9"
     }
+
     session = requests.Session()
     response = session.get(url, headers=headers)
+
+    if response.status_code != 200:
+        print("Failed main request")
+        return []
+
     soup = BeautifulSoup(response.text, "html.parser")
 
     articles = []
 
-    # Find all headings that contain links
-    heading_links = soup.select("h2 a, h3 a")
+    # =========================
+    # 🥇 METHOD 1: Article tags
+    # =========================
+    cards = soup.find_all("article")
 
-    for link_tag in heading_links[:12]:  # grab more in case some are ads/irrelevant
-        title = link_tag.get_text(strip=True)
-        article_url = link_tag.get("href")
-        if not article_url:
+    for card in cards:
+        a_tag = card.find("a", href=True)
+        if not a_tag:
             continue
-        article_url = article_url if article_url.startswith("http") else "https://www.dawn.com" + article_url
 
-        # Fetch the article page
-        article_page = requests.get(article_url, headers=headers)
-        article_soup = BeautifulSoup(article_page.text, "html.parser")
+        title = a_tag.get_text(strip=True)
+        link = a_tag["href"]
 
-        paragraphs = article_soup.find_all("p")
-        content = " ".join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
+        if not title or len(title) < 15:
+            continue
 
-        author_tag = article_soup.select_one(".byline__name, .story__byline")
-        author = author_tag.get_text(strip=True) if author_tag else "Unknown"
+        articles.append((title, link))
 
-        articles.append({"title": title, "content": content, "author": author})
+    # =========================
+    # 🥈 METHOD 2: Headings
+    # =========================
+    if len(articles) < 3:
+        print("Fallback 1 activated")
 
-        if len(articles) >= 6:
+        for tag in soup.select("h2 a, h3 a"):
+            title = tag.get_text(strip=True)
+            link = tag.get("href")
+
+            if title and link:
+                articles.append((title, link))
+
+    # =========================
+    # 🥉 METHOD 3: ALL LINKS FILTER
+    # =========================
+    if len(articles) < 3:
+        print("Fallback 2 activated")
+
+        for tag in soup.find_all("a", href=True):
+            href = tag["href"]
+            title = tag.get_text(strip=True)
+
+            if "/news/" in href and len(title) > 20:
+                articles.append((title, href))
+
+    # =========================
+    # 🔄 CLEAN + FETCH CONTENT
+    # =========================
+    final_articles = []
+    seen = set()
+
+    for title, link in articles:
+
+        if len(final_articles) >= 6:
             break
 
-        time.sleep(0.1)
+        full_url = link if link.startswith("http") else "https://www.dawn.com" + link
 
-    return articles
-# =========================
-# RANDOM ANALYTICAL SENTENCES
-# =========================
-ANALYTICAL_SENTENCES = [
+        if full_url in seen:
+            continue
+
+        seen.add(full_url)
+
+        try:
+            page = session.get(full_url, headers=headers)
+            soup_page = BeautifulSoup(page.text, "html.parser")
+
+            paragraphs = soup_page.find_all("p")
+            content = " ".join(
+                p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)
+            )
+
+            if len(content) < 300:
+                continue
+
+            author_tag = soup_page.select_one(".byline__name, .story__byline")
+            author = author_tag.get_text(strip=True) if author_tag else "Unknown"
+
+            final_articles.append({
+                "title": title,
+                "content": content,
+                "author": author
+            })
+
+            time.sleep(0.2)
+
+        except Exception as e:
+            print("Skipping:", e)
+            continue
+
+    return final_articles
     "Understanding this debate requires examining the broader geopolitical context.",
     "This issue reflects deeper tensions in global power politics.",
     "The article raises important questions about the structure of the international system.",
@@ -616,12 +690,14 @@ tab1, tab2, tab3 = st.tabs(["Fetch Opinions", "Generate Notes", "Daily Learning 
 
 # ===== TAB 1 =====
 with tab1:
-    # Safely show articles count
     st.write("Articles found:", len(st.session_state.get("articles", [])))
-
     if st.button("Fetch Top Opinions"):
-        with st.spinner("Fetching..."):
-            st.session_state["articles"] = scrape_opinions()
+    with st.spinner("Fetching..."):
+        st.session_state["articles"] = scrape_opinions()
+
+    if not st.session_state["articles"]:
+        st.error("No articles found! Fallback failed.")
+    else:
         st.success("Fetched Successfully")
 
     # Display previews only if articles exist
