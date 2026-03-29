@@ -46,9 +46,12 @@ FAST_MODEL = "llama-3.1-8b-instant"
 # SCRAPER (UNCHANGED)
 # =========================
 def scrape_opinions():
-    url = "https://www.dawn.com/opinion"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    response = requests.get(url, headers=headers)
+    headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "Accept-Language": "en-US,en;q=0.9",
+    }
+    session = requests.Session()
+    response = session.get(url, headers=headers)
     soup = BeautifulSoup(response.text, "html.parser")
 
     articles = []
