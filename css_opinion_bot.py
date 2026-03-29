@@ -49,11 +49,8 @@ FAST_MODEL = "llama-3.1-8b-instant"
 # =========================
 # RANDOM ANALYTICAL SENTENCES
 # =========================
-ANALYTICAL_SENTENCES = [def scrape_opinions():
-    import requests
-    from bs4 import BeautifulSoup
-    import time
-
+def scrape_opinions():
+    
     url = "https://www.dawn.com/opinion"
 
     headers = {
