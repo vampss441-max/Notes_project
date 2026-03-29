@@ -46,23 +46,107 @@ FAST_MODEL = "llama-3.1-8b-instant"
 # =========================
 # SCRAPER (UNCHANGED)
 # =========================
+from playwright.sync_api import sync_playwright
+from bs4 import BeautifulSoup
+import time
+
 def scrape_opinions():
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page()
-        page.goto("https://www.dawn.com/opinion")
-        page.wait_for_timeout(2000)  # wait for JS to render
+    """
+    Scrape top 6 opinion articles from Dawn.com.
+    Uses Playwright for dynamic content, with fallback extraction.
+    Returns a list of dicts: [{'title', 'content', 'author'}]
+    """
+    articles = []
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto("https://www.dawn.com/opinion", timeout=60000)
+            time.sleep(2)  # wait for content to load
 
-        articles = []
-        items = page.locator("section a").all()  # adjust selector
+            html = page.content()
+            browser.close()
 
-        for i in range(min(len(items), 6)):
-            title = items[i].inner_text()
-            link = items[i].get_attribute("href")
-            articles.append({"title": title, "url": link})
+            soup = BeautifulSoup(html, "html.parser")
 
-        browser.close()
-    return articles
+            # Primary extraction: article tags
+            cards = soup.find_all("article")
+            for card in cards:
+                a_tag = card.find("a", href=True)
+                if not a_tag:
+                    continue
+                title = a_tag.get_text(strip=True)
+                link = a_tag["href"]
+                if not title or len(title) < 15:
+                    continue
+                articles.append((title, link))
+
+            # Fallback if <3 articles
+            if len(articles) < 3:
+                print("Fallback: heading links")
+                for tag in soup.select("h2 a, h3 a"):
+                    title = tag.get_text(strip=True)
+                    link = tag.get("href")
+                    if title and link:
+                        articles.append((title, link))
+
+            # Final fallback: all links filter
+            if len(articles) < 3:
+                print("Fallback: all links filter")
+                for tag in soup.find_all("a", href=True):
+                    href = tag["href"]
+                    title = tag.get_text(strip=True)
+                    if "/news/" in href and len(title) > 20:
+                        articles.append((title, href))
+
+            # Clean + fetch article content
+            final_articles = []
+            seen = set()
+            for title, link in articles:
+                if len(final_articles) >= 6:
+                    break
+                full_url = link if link.startswith("http") else "https://www.dawn.com" + link
+                if full_url in seen:
+                    continue
+                seen.add(full_url)
+
+                try:
+                    with sync_playwright() as p:
+                        browser = p.chromium.launch(headless=True)
+                        page = browser.new_page()
+                        page.goto(full_url, timeout=60000)
+                        time.sleep(1)
+                        html_page = page.content()
+                        browser.close()
+
+                        soup_page = BeautifulSoup(html_page, "html.parser")
+                        paragraphs = soup_page.find_all("p")
+                        content = " ".join([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
+                        if len(content) < 300:
+                            continue
+                        author_tag = soup_page.select_one(".byline__name, .story__byline")
+                        author = author_tag.get_text(strip=True) if author_tag else "Unknown"
+
+                        final_articles.append({
+                            "title": title,
+                            "content": content,
+                            "author": author
+                        })
+                        time.sleep(0.2)
+                except Exception as e:
+                    print("Skipping article:", e)
+                    continue
+
+            if not final_articles:
+                print("No articles found after all fallbacks.")
+            else:
+                print(f"Fetched {len(final_articles)} articles successfully!")
+
+            return final_articles
+
+    except Exception as e:
+        print("Playwright failed:", e)
+        return []
 ANALYTICAL_SENTENCES = [
     "Understanding this debate requires examining the broader geopolitical context.",
     "This issue reflects deeper tensions in global power politics.",
@@ -582,13 +666,9 @@ def generate_capsule_pdf():
     buffer.seek(0)
     return buffer
 
-#=========================
-# STREAMLIT UI
-#=========================
-
+#Streamlit ===== TAB 1 =====
 tab1, tab2, tab3 = st.tabs(["Fetch Opinions", "Generate Notes", "Daily Learning Capsule"])
 
-# ===== TAB 1 =====
 with tab1:
     st.write("Articles found:", len(st.session_state.get("articles", [])))
 
@@ -599,7 +679,19 @@ with tab1:
         if not st.session_state["articles"]:
             st.error("No articles found! Fallback failed.")
         else:
-            st.success("Fetched Successfully")
+            st.success(f"Fetched Successfully ({len(st.session_state['articles'])} articles)")
+
+    # Display previews only if articles exist
+    if "articles" in st.session_state and st.session_state["articles"]:
+        selected_articles = []
+
+        for i, art in enumerate(st.session_state["articles"]):
+            key = f"article_{i}"  # unique key to maintain checkbox state
+            if st.checkbox(f"{art['title']} - {art['author']}", value=True, key=key):
+                st.write(art['content'][:400] + "...")
+                selected_articles.append(art)
+
+        st.session_state["selected_articles"] = selected_articles
 
     # Display previews only if articles exist
     if "articles" in st.session_state and st.session_state["articles"]:
