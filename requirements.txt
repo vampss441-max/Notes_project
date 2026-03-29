@@ -10,4 +10,4 @@ langchain-core
 groq
 openai
 reportlab
-playwright install chromium
+playwright 
