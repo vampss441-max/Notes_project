@@ -47,71 +47,14 @@ def scrape_opinions():
     from bs4 import BeautifulSoup
 
     BASE = "https://www.dawn.com"
-    RSS_URL = "https://www.dawn.com/feeds/opinion"
+    PROXY = "https://textise.net/showtext.aspx?strURL="
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
 
-    def extract_article(url):
-        try:
-            r = requests.get(url, headers=headers, timeout=15)
-            soup = BeautifulSoup(r.text, "html.parser")
-
-            content_div = soup.find("div", class_="story__content")
-            paragraphs = content_div.find_all("p") if content_div else soup.find_all("p")
-
-            content = " ".join(p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True))
-
-            author = "Unknown"
-            for sel in [".byline__name", ".story__byline", ".author"]:
-                tag = soup.select_one(sel)
-                if tag:
-                    author = tag.get_text(strip=True)
-                    break
-
-            return content, author
-
-        except Exception as e:
-            print("Extract error:", e)
-            return "", "Unknown"
-
-    articles = []
-
-    # =========================
-    # 1. TRY RSS FIRST
-    # =========================
     try:
-        r = requests.get(RSS_URL, headers=headers, timeout=15)
-        soup = BeautifulSoup(r.content, "xml")
-
-        items = soup.find_all("item")
-
-        for item in items[:10]:
-            title = item.title.text
-            link = item.link.text
-
-            content, author = extract_article(link)
-
-            if len(content) > 300:
-                articles.append({
-                    "title": title,
-                    "content": content,
-                    "author": author
-                })
-
-            if len(articles) >= 6:
-                return articles
-
-    except Exception as e:
-        print("RSS failed:", e)
-
-    # =========================
-    # 2. FALLBACK → HTML SCRAPE
-    # =========================
-    try:
-        r = requests.get(BASE + "/opinion", headers=headers, timeout=15)
-        soup = BeautifulSoup(r.text, "html.parser")
+        # Step 1: Fetch opinion page via proxy
+        res = requests.get(PROXY + BASE + "/opinion", headers=headers, timeout=20)
+        soup = BeautifulSoup(res.text, "html.parser")
 
         links = []
 
@@ -119,45 +62,55 @@ def scrape_opinions():
             href = a["href"]
             title = a.get_text(strip=True)
 
-            if href.startswith("/") and len(title) > 25:
-                full = BASE + href
+            if "/opinion/" in href and len(title) > 20:
+                full = href if href.startswith("http") else BASE + href
                 links.append((title, full))
 
-        # deduplicate
+        # remove duplicates
         seen = set()
-        clean = []
+        clean_links = []
         for t, l in links:
             if l not in seen:
                 seen.add(l)
-                clean.append((t, l))
+                clean_links.append((t, l))
 
-        for title, link in clean[:12]:
-            content, author = extract_article(link)
+        articles = []
 
-            if len(content) > 300:
+        # Step 2: Fetch articles via proxy
+        for title, link in clean_links[:8]:
+            try:
+                page = requests.get(PROXY + link, headers=headers, timeout=20)
+                soup_page = BeautifulSoup(page.text, "html.parser")
+
+                paragraphs = soup_page.find_all("p")
+
+                content = " ".join(
+                    p.get_text(strip=True)
+                    for p in paragraphs
+                    if p.get_text(strip=True)
+                )
+
+                if len(content) < 300:
+                    continue
+
                 articles.append({
                     "title": title,
                     "content": content,
-                    "author": author
+                    "author": "Dawn"
                 })
 
-            if len(articles) >= 6:
-                return articles
+                if len(articles) >= 6:
+                    break
+
+            except Exception as e:
+                print("Skipping:", e)
+                continue
+
+        return articles
 
     except Exception as e:
-        print("HTML fallback failed:", e)
-
-    # =========================
-    # 3. HARD FALLBACK (NEVER EMPTY)
-    # =========================
-    if not articles:
-        return [{
-            "title": "Fallback: Could not fetch live articles",
-            "content": "Your network or Dawn blocking is preventing scraping. Check connection or try again later.",
-            "author": "System"
-        }]
-
-    return articles
+        print("Proxy scraper failed:", e)
+        return []
 # =========================
 # ⚠️ EVERYTHING BELOW UNCHANGED
 # =========================
