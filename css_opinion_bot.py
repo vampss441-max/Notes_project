@@ -49,8 +49,6 @@ def scrape_opinions():
 
     RSS_URL = "https://www.dawn.com/feeds/opinion"
 
-    today = datetime.utcnow().strftime("%a, %d %b %Y")
-
     try:
         res = requests.get(RSS_URL, timeout=15)
         soup = BeautifulSoup(res.content, "xml")
@@ -59,13 +57,7 @@ def scrape_opinions():
 
         articles = []
 
-        for item in items:
-            pub_date = item.pubDate.text
-
-            # ✅ FILTER ONLY TODAY'S ARTICLES
-            if today not in pub_date:
-                continue
-
+        for item in items[:12]:  # take more to filter later
             title = item.title.text
             link = item.link.text
 
@@ -73,6 +65,7 @@ def scrape_opinions():
                 page = requests.get(link, timeout=15)
                 soup_page = BeautifulSoup(page.text, "html.parser")
 
+                # Main content
                 content_div = soup_page.find("div", class_="story__content")
 
                 if content_div:
@@ -86,10 +79,11 @@ def scrape_opinions():
                     if p.get_text(strip=True)
                 )
 
+                # Skip weak articles
                 if len(content) < 300:
                     continue
 
-                # Author extraction
+                # Author
                 author = "Unknown"
                 for sel in [".byline__name", ".story__byline", ".author"]:
                     tag = soup_page.select_one(sel)
@@ -103,12 +97,12 @@ def scrape_opinions():
                     "author": author
                 })
 
+                if len(articles) >= 6:
+                    break
+
             except Exception as e:
                 print("Skipping:", e)
                 continue
-
-            if len(articles) >= 6:
-                break
 
         return articles
 
