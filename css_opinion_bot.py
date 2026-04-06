@@ -43,69 +43,12 @@ FAST_MODEL = "llama-3.1-8b-instant"
 # 🔥 UPGRADED SCRAPER (RESILIENT)
 # =========================
 def scrape_opinions():
-    import requests
-    from bs4 import BeautifulSoup
-
-    BASE = "https://tribune.com.pk"
-
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    import json
 
     try:
-        res = requests.get(f"{BASE}/opinion", headers=headers, timeout=15)
-        soup = BeautifulSoup(res.text, "html.parser")
-
-        articles = []
-
-        # 🔥 Tribune opinion cards
-        for a in soup.select("h2 a, h3 a"):
-            title = a.get_text(strip=True)
-            link = a.get("href")
-
-            if not title or not link:
-                continue
-
-            full_link = link if link.startswith("http") else BASE + link
-
-            try:
-                page = requests.get(full_link, headers=headers, timeout=15)
-                soup_page = BeautifulSoup(page.text, "html.parser")
-
-                paragraphs = soup_page.find_all("p")
-
-                content = " ".join(
-                    p.get_text(strip=True)
-                    for p in paragraphs
-                    if p.get_text(strip=True)
-                )
-
-                if len(content) < 300:
-                    continue
-
-                # Author
-                author = "Unknown"
-                author_tag = soup_page.select_one(".author, .author-name")
-                if author_tag:
-                    author = author_tag.get_text(strip=True)
-
-                articles.append({
-                    "title": title,
-                    "content": content,
-                    "author": author
-                })
-
-                if len(articles) >= 6:
-                    break
-
-            except Exception as e:
-                print("Skipping:", e)
-                continue
-
-        return articles
-
-    except Exception as e:
-        print("Tribune scrape failed:", e)
+        with open("articles.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
         return []
 # =========================
 # ⚠️ EVERYTHING BELOW UNCHANGED
