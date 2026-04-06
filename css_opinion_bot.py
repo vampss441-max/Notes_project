@@ -45,15 +45,22 @@ FAST_MODEL = "llama-3.1-8b-instant"
 def scrape_opinions():
     import requests
     from bs4 import BeautifulSoup
+    from urllib.parse import quote
 
     BASE = "https://www.dawn.com"
     PROXY = "https://textise.net/showtext.aspx?strURL="
 
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    def fetch(url):
+        safe_url = PROXY + quote(url, safe="")
+        return requests.get(safe_url, headers=headers, timeout=20)
 
     try:
         # Step 1: Fetch opinion page via proxy
-        res = requests.get(PROXY + BASE + "/opinion", headers=headers, timeout=20)
+        res = fetch(BASE + "/opinion")
         soup = BeautifulSoup(res.text, "html.parser")
 
         links = []
@@ -62,11 +69,11 @@ def scrape_opinions():
             href = a["href"]
             title = a.get_text(strip=True)
 
-            if "/opinion/" in href and len(title) > 20:
+            if "/opinion/" in href and len(title) > 25:
                 full = href if href.startswith("http") else BASE + href
                 links.append((title, full))
 
-        # remove duplicates
+        # Deduplicate
         seen = set()
         clean_links = []
         for t, l in links:
@@ -76,10 +83,10 @@ def scrape_opinions():
 
         articles = []
 
-        # Step 2: Fetch articles via proxy
-        for title, link in clean_links[:8]:
+        # Step 2: Fetch each article
+        for title, link in clean_links[:10]:
             try:
-                page = requests.get(PROXY + link, headers=headers, timeout=20)
+                page = fetch(link)
                 soup_page = BeautifulSoup(page.text, "html.parser")
 
                 paragraphs = soup_page.find_all("p")
@@ -109,7 +116,7 @@ def scrape_opinions():
         return articles
 
     except Exception as e:
-        print("Proxy scraper failed:", e)
+        print("Proxy failed:", e)
         return []
 # =========================
 # ⚠️ EVERYTHING BELOW UNCHANGED
