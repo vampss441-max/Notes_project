@@ -48,93 +48,66 @@ def scrape_opinions():
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+            browser = p.chromium.launch(
+                headless=False,
+                args=["--start-maximized"]
+            )
 
-            # Load page
+            page = browser.new_page(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                           "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            )
+
             page.goto("https://www.dawn.com/opinion", timeout=60000)
-            page.wait_for_selector("body")
+            page.wait_for_load_state("networkidle")
+
+            # scroll to load all content
+            page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
+            time.sleep(2)
 
             html = page.content()
             soup = BeautifulSoup(html, "html.parser")
 
             candidates = []
 
-            # ✅ Strategy 1: headings (most reliable)
-            for tag in soup.select("h2 a, h3 a, h4 a"):
+            # Extract links
+            for tag in soup.find_all("a", href=True):
                 title = tag.get_text(strip=True)
-                link = tag.get("href")
+                link = tag["href"]
 
-                if not title or not link:
-                    continue
-
-                if "/opinion/" in link:
-                    candidates.append((title, link))
-
-            # ✅ Strategy 2: all links fallback
-            if len(candidates) < 5:
-                for tag in soup.find_all("a", href=True):
-                    title = tag.get_text(strip=True)
-                    link = tag["href"]
-
-                    if "/opinion/" in link and len(title) > 20:
-                        candidates.append((title, link))
+                if "/opinion/" in link and len(title) > 25:
+                    full_url = link if link.startswith("http") else "https://www.dawn.com" + link
+                    candidates.append((title, full_url))
 
             # Remove duplicates
             seen = set()
             clean_articles = []
+            for t, l in candidates:
+                if l not in seen:
+                    seen.add(l)
+                    clean_articles.append((t, l))
 
-            for title, link in candidates:
-                full_url = link if link.startswith("http") else "https://www.dawn.com" + link
-                if full_url not in seen:
-                    seen.add(full_url)
-                    clean_articles.append((title, full_url))
-
-            # =========================
-            # FETCH ARTICLE CONTENT (SINGLE BROWSER SESSION)
-            # =========================
             final_articles = []
 
-            for title, url in clean_articles[:10]:
-
+            for title, url in clean_articles[:8]:
                 try:
                     page.goto(url, timeout=60000)
-                    page.wait_for_selector("body")
+                    page.wait_for_load_state("networkidle")
 
                     html_page = page.content()
                     soup_page = BeautifulSoup(html_page, "html.parser")
 
-                    # ✅ Smart content extraction
-                    content = ""
-
-                    # Try Dawn main container
                     content_div = soup_page.find("div", class_="story__content")
+                    paragraphs = content_div.find_all("p") if content_div else soup_page.find_all("p")
 
-                    if content_div:
-                        paragraphs = content_div.find_all("p")
-                    else:
-                        paragraphs = soup_page.find_all("p")
-
-                    content = " ".join(
-                        p.get_text(strip=True)
-                        for p in paragraphs
-                        if p.get_text(strip=True)
-                    )
+                    content = " ".join(p.get_text(strip=True) for p in paragraphs)
 
                     if len(content) < 400:
                         continue
 
-                    # ✅ Author extraction (resilient)
+                    # Author extraction
                     author = "Unknown"
-
-                    author_selectors = [
-                        ".byline__name",
-                        ".story__byline",
-                        ".story__meta",
-                        ".author"
-                    ]
-
-                    for sel in author_selectors:
+                    for sel in [".byline__name", ".story__byline", ".author"]:
                         tag = soup_page.select_one(sel)
                         if tag:
                             author = tag.get_text(strip=True)
@@ -150,17 +123,15 @@ def scrape_opinions():
                         break
 
                 except Exception as e:
-                    print("Skipping:", e)
+                    print("Skipping article:", e)
                     continue
 
             browser.close()
-
             return final_articles
 
     except Exception as e:
         print("Scraper failed:", e)
         return []
-
 # =========================
 # ⚠️ EVERYTHING BELOW UNCHANGED
 # =========================
