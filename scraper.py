@@ -2,7 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import json
 
-BASE = "https://tribune.com.pk"
+BASE = "https://www.dawn.com"
 
 headers = {
     "User-Agent": "Mozilla/5.0"
@@ -14,14 +14,20 @@ def scrape():
 
     links = []
 
+    # 🔥 Flexible extraction (important for Dawn)
     for a in soup.find_all("a", href=True):
         title = a.get_text(strip=True)
         href = a["href"]
 
-        if href.startswith("/") and len(title) > 25:
+        if (
+            href.startswith("/") and
+            len(title) > 25 and
+            "/news/" in href   # Dawn articles often use /news/
+        ):
             full = BASE + href
             links.append((title, full))
 
+    # Remove duplicates
     seen = set()
     clean_links = []
     for t, l in links:
@@ -31,6 +37,7 @@ def scrape():
 
     articles = []
 
+    # Fetch content
     for title, link in clean_links[:12]:
         try:
             page = requests.get(link, headers=headers)
@@ -42,10 +49,17 @@ def scrape():
             if len(content) < 400:
                 continue
 
+            author = "Unknown"
+            for sel in [".byline__name", ".story__byline"]:
+                tag = soup_page.select_one(sel)
+                if tag:
+                    author = tag.get_text(strip=True)
+                    break
+
             articles.append({
                 "title": title,
                 "content": content,
-                "author": "Tribune"
+                "author": author
             })
 
             if len(articles) >= 6:
