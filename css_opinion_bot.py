@@ -188,6 +188,12 @@ with tab1:
     st.subheader("📰 Fetch Dawn Opinion Articles")
 
     if st.button("Fetch Top Opinions"):
+
+        # 🔥 ADD DEBUG HERE
+        import requests
+        st.write("Google:", requests.get("https://www.google.com").status_code)
+        st.write("Dawn:", requests.get("https://www.dawn.com").status_code)
+
         with st.spinner("Fetching latest articles..."):
             st.session_state["articles"] = scrape_opinions()
 
