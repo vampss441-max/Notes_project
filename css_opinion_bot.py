@@ -47,87 +47,80 @@ def scrape_opinions():
     articles = []
 
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=False,
-                args=["--start-maximized"]
-            )
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
 
-            page = browser.new_page(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                           "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
+        # Step 1: Get opinion page
+        res = requests.get("https://www.dawn.com/opinion", headers=headers, timeout=15)
+        soup = BeautifulSoup(res.text, "html.parser")
 
-            page.goto("https://www.dawn.com/opinion", timeout=60000)
-            page.wait_for_load_state("networkidle")
+        candidates = []
 
-            # scroll to load all content
-            page.evaluate("window.scrollBy(0, document.body.scrollHeight)")
-            time.sleep(2)
+        # Extract links
+        for tag in soup.find_all("a", href=True):
+            title = tag.get_text(strip=True)
+            link = tag["href"]
 
-            html = page.content()
-            soup = BeautifulSoup(html, "html.parser")
+            if "/opinion/" in link and len(title) > 20:
+                full_url = link if link.startswith("http") else "https://www.dawn.com" + link
+                candidates.append((title, full_url))
 
-            candidates = []
+        # Remove duplicates
+        seen = set()
+        clean_articles = []
+        for t, l in candidates:
+            if l not in seen:
+                seen.add(l)
+                clean_articles.append((t, l))
 
-            # Extract links
-            for tag in soup.find_all("a", href=True):
-                title = tag.get_text(strip=True)
-                link = tag["href"]
+        # Step 2: Fetch article content
+        final_articles = []
 
-                if "/opinion/" in link and len(title) > 25:
-                    full_url = link if link.startswith("http") else "https://www.dawn.com" + link
-                    candidates.append((title, full_url))
+        for title, url in clean_articles[:10]:
+            try:
+                page = requests.get(url, headers=headers, timeout=15)
+                soup_page = BeautifulSoup(page.text, "html.parser")
 
-            # Remove duplicates
-            seen = set()
-            clean_articles = []
-            for t, l in candidates:
-                if l not in seen:
-                    seen.add(l)
-                    clean_articles.append((t, l))
+                # Main content container
+                content_div = soup_page.find("div", class_="story__content")
 
-            final_articles = []
+                if content_div:
+                    paragraphs = content_div.find_all("p")
+                else:
+                    paragraphs = soup_page.find_all("p")
 
-            for title, url in clean_articles[:8]:
-                try:
-                    page.goto(url, timeout=60000)
-                    page.wait_for_load_state("networkidle")
+                content = " ".join(
+                    p.get_text(strip=True)
+                    for p in paragraphs
+                    if p.get_text(strip=True)
+                )
 
-                    html_page = page.content()
-                    soup_page = BeautifulSoup(html_page, "html.parser")
-
-                    content_div = soup_page.find("div", class_="story__content")
-                    paragraphs = content_div.find_all("p") if content_div else soup_page.find_all("p")
-
-                    content = " ".join(p.get_text(strip=True) for p in paragraphs)
-
-                    if len(content) < 400:
-                        continue
-
-                    # Author extraction
-                    author = "Unknown"
-                    for sel in [".byline__name", ".story__byline", ".author"]:
-                        tag = soup_page.select_one(sel)
-                        if tag:
-                            author = tag.get_text(strip=True)
-                            break
-
-                    final_articles.append({
-                        "title": title,
-                        "content": content,
-                        "author": author
-                    })
-
-                    if len(final_articles) >= 6:
-                        break
-
-                except Exception as e:
-                    print("Skipping article:", e)
+                if len(content) < 400:
                     continue
 
-            browser.close()
-            return final_articles
+                # Author extraction
+                author = "Unknown"
+                for sel in [".byline__name", ".story__byline", ".author"]:
+                    tag = soup_page.select_one(sel)
+                    if tag:
+                        author = tag.get_text(strip=True)
+                        break
+
+                final_articles.append({
+                    "title": title,
+                    "content": content,
+                    "author": author
+                })
+
+                if len(final_articles) >= 6:
+                    break
+
+            except Exception as e:
+                print("Skipping article:", e)
+                continue
+
+        return final_articles
 
     except Exception as e:
         print("Scraper failed:", e)
@@ -199,23 +192,57 @@ Article:
 # =========================
 # UI (UNCHANGED)
 # =========================
-
 tab1, tab2, tab3 = st.tabs(["Fetch Opinions", "Generate Notes", "Daily Learning Capsule"])
 
+# =========================
+# TAB 1 — FETCH + SELECT ARTICLES
+# =========================
 with tab1:
+
+    st.subheader("📰 Fetch Dawn Opinion Articles")
+
     if st.button("Fetch Top Opinions"):
-        with st.spinner("Fetching..."):
+        with st.spinner("Fetching latest articles..."):
             st.session_state["articles"] = scrape_opinions()
 
         if not st.session_state["articles"]:
-            st.error("No articles found!")
+            st.error("❌ No articles found! Try again.")
         else:
-            st.success(f"Fetched {len(st.session_state['articles'])} articles")
+            st.success(f"✅ Fetched {len(st.session_state['articles'])} articles")
 
-    if "articles" in st.session_state:
+    # ---------- SHOW ARTICLES ----------
+    if "articles" not in st.session_state:
+        st.info("Click 'Fetch Top Opinions' to load articles.")
+    elif not st.session_state["articles"]:
+        st.warning("No articles available.")
+    else:
+        st.markdown("### 📌 Select Articles for Notes Generation")
+
         selected_articles = []
+
         for i, art in enumerate(st.session_state["articles"]):
-            if st.checkbox(art["title"], value=True):
+            key = f"article_{i}"
+
+            with st.container():
+                col1, col2 = st.columns([1, 10])
+
+                with col1:
+                    checked = st.checkbox("", value=True, key=key)
+
+                with col2:
+                    st.markdown(f"**{art['title']}**")
+                    st.caption(f"✍️ {art['author']}")
+
+                    # Preview content
+                    preview = art["content"][:300] + "..."
+                    st.write(preview)
+
+                st.divider()
+
+            if checked:
                 selected_articles.append(art)
 
         st.session_state["selected_articles"] = selected_articles
+
+        # ---------- SUMMARY ----------
+        st.success(f"📚 Selected {len(selected_articles)} articles for note generation")
