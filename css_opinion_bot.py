@@ -42,53 +42,53 @@ FAST_MODEL = "llama-3.1-8b-instant"
 # =========================
 # 🔥 UPGRADED SCRAPER (RESILIENT)
 # =========================
-
 def scrape_opinions():
-    articles = []
+    import requests
+    from bs4 import BeautifulSoup
+
+    BASE = "https://www.dawn.com"
 
     try:
         headers = {
             "User-Agent": "Mozilla/5.0"
         }
 
-        # Step 1: Get opinion page
-        res = requests.get("https://www.dawn.com/opinion", headers=headers, timeout=15)
+        res = requests.get(f"{BASE}/opinion", headers=headers, timeout=15)
         soup = BeautifulSoup(res.text, "html.parser")
 
-        candidates = []
+        links = []
 
-        # Extract links
-        for tag in soup.find_all("a", href=True):
-            title = tag.get_text(strip=True)
-            link = tag["href"]
+        # ✅ Get ALL possible article links
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            title = a.get_text(strip=True)
 
-            if "/opinion/" in link and len(title) > 20:
-                full_url = link if link.startswith("http") else "https://www.dawn.com" + link
-                candidates.append((title, full_url))
+            # 🔥 Flexible filtering (THIS WAS THE REAL ISSUE)
+            if (
+                href.startswith("/") and
+                len(title) > 25 and
+                any(x in href for x in ["news", "columns", "editorials", "opinion"])
+            ):
+                full_link = BASE + href
+                links.append((title, full_link))
 
         # Remove duplicates
         seen = set()
-        clean_articles = []
-        for t, l in candidates:
+        clean_links = []
+        for t, l in links:
             if l not in seen:
                 seen.add(l)
-                clean_articles.append((t, l))
+                clean_links.append((t, l))
 
-        # Step 2: Fetch article content
-        final_articles = []
+        articles = []
 
-        for title, url in clean_articles[:10]:
+        # ✅ Fetch content
+        for title, url in clean_links[:10]:
             try:
                 page = requests.get(url, headers=headers, timeout=15)
                 soup_page = BeautifulSoup(page.text, "html.parser")
 
-                # Main content container
-                content_div = soup_page.find("div", class_="story__content")
-
-                if content_div:
-                    paragraphs = content_div.find_all("p")
-                else:
-                    paragraphs = soup_page.find_all("p")
+                paragraphs = soup_page.find_all("p")
 
                 content = " ".join(
                     p.get_text(strip=True)
@@ -96,10 +96,10 @@ def scrape_opinions():
                     if p.get_text(strip=True)
                 )
 
-                if len(content) < 400:
+                if len(content) < 500:
                     continue
 
-                # Author extraction
+                # Author
                 author = "Unknown"
                 for sel in [".byline__name", ".story__byline", ".author"]:
                     tag = soup_page.select_one(sel)
@@ -107,23 +107,22 @@ def scrape_opinions():
                         author = tag.get_text(strip=True)
                         break
 
-                final_articles.append({
+                articles.append({
                     "title": title,
                     "content": content,
                     "author": author
                 })
 
-                if len(final_articles) >= 6:
+                if len(articles) >= 6:
                     break
 
-            except Exception as e:
-                print("Skipping article:", e)
+            except:
                 continue
 
-        return final_articles
+        return articles
 
     except Exception as e:
-        print("Scraper failed:", e)
+        print("Error:", e)
         return []
 # =========================
 # ⚠️ EVERYTHING BELOW UNCHANGED
