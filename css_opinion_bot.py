@@ -48,7 +48,8 @@ def scrape_opinions():
     try:
         with open("articles.json", "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except Exception as e:
+        print("Error loading JSON:", e)
         return []
 # =========================
 # ⚠️ EVERYTHING BELOW UNCHANGED
