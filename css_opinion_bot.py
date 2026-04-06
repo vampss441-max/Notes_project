@@ -45,50 +45,40 @@ FAST_MODEL = "llama-3.1-8b-instant"
 def scrape_opinions():
     import requests
     from bs4 import BeautifulSoup
+    from datetime import datetime
 
-    BASE = "https://www.dawn.com"
+    RSS_URL = "https://www.dawn.com/feeds/opinion"
+
+    today = datetime.utcnow().strftime("%a, %d %b %Y")
 
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0"
-        }
+        res = requests.get(RSS_URL, timeout=15)
+        soup = BeautifulSoup(res.content, "xml")
 
-        res = requests.get(f"{BASE}/opinion", headers=headers, timeout=15)
-        soup = BeautifulSoup(res.text, "html.parser")
-
-        links = []
-
-        # ✅ Get ALL possible article links
-        for a in soup.find_all("a", href=True):
-            href = a["href"]
-            title = a.get_text(strip=True)
-
-            # 🔥 Flexible filtering (THIS WAS THE REAL ISSUE)
-            if (
-                href.startswith("/") and
-                len(title) > 25 and
-                any(x in href for x in ["news", "columns", "editorials", "opinion"])
-            ):
-                full_link = BASE + href
-                links.append((title, full_link))
-
-        # Remove duplicates
-        seen = set()
-        clean_links = []
-        for t, l in links:
-            if l not in seen:
-                seen.add(l)
-                clean_links.append((t, l))
+        items = soup.find_all("item")
 
         articles = []
 
-        # ✅ Fetch content
-        for title, url in clean_links[:10]:
+        for item in items:
+            pub_date = item.pubDate.text
+
+            # ✅ FILTER ONLY TODAY'S ARTICLES
+            if today not in pub_date:
+                continue
+
+            title = item.title.text
+            link = item.link.text
+
             try:
-                page = requests.get(url, headers=headers, timeout=15)
+                page = requests.get(link, timeout=15)
                 soup_page = BeautifulSoup(page.text, "html.parser")
 
-                paragraphs = soup_page.find_all("p")
+                content_div = soup_page.find("div", class_="story__content")
+
+                if content_div:
+                    paragraphs = content_div.find_all("p")
+                else:
+                    paragraphs = soup_page.find_all("p")
 
                 content = " ".join(
                     p.get_text(strip=True)
@@ -96,10 +86,10 @@ def scrape_opinions():
                     if p.get_text(strip=True)
                 )
 
-                if len(content) < 500:
+                if len(content) < 300:
                     continue
 
-                # Author
+                # Author extraction
                 author = "Unknown"
                 for sel in [".byline__name", ".story__byline", ".author"]:
                     tag = soup_page.select_one(sel)
@@ -113,16 +103,17 @@ def scrape_opinions():
                     "author": author
                 })
 
-                if len(articles) >= 6:
-                    break
-
-            except:
+            except Exception as e:
+                print("Skipping:", e)
                 continue
+
+            if len(articles) >= 6:
+                break
 
         return articles
 
     except Exception as e:
-        print("Error:", e)
+        print("RSS error:", e)
         return []
 # =========================
 # ⚠️ EVERYTHING BELOW UNCHANGED
