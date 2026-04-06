@@ -45,70 +45,119 @@ FAST_MODEL = "llama-3.1-8b-instant"
 def scrape_opinions():
     import requests
     from bs4 import BeautifulSoup
-    from datetime import datetime
 
+    BASE = "https://www.dawn.com"
     RSS_URL = "https://www.dawn.com/feeds/opinion"
 
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
+
+    def extract_article(url):
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+            soup = BeautifulSoup(r.text, "html.parser")
+
+            content_div = soup.find("div", class_="story__content")
+            paragraphs = content_div.find_all("p") if content_div else soup.find_all("p")
+
+            content = " ".join(p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True))
+
+            author = "Unknown"
+            for sel in [".byline__name", ".story__byline", ".author"]:
+                tag = soup.select_one(sel)
+                if tag:
+                    author = tag.get_text(strip=True)
+                    break
+
+            return content, author
+
+        except Exception as e:
+            print("Extract error:", e)
+            return "", "Unknown"
+
+    articles = []
+
+    # =========================
+    # 1. TRY RSS FIRST
+    # =========================
     try:
-        res = requests.get(RSS_URL, timeout=15)
-        soup = BeautifulSoup(res.content, "xml")
+        r = requests.get(RSS_URL, headers=headers, timeout=15)
+        soup = BeautifulSoup(r.content, "xml")
 
         items = soup.find_all("item")
 
-        articles = []
-
-        for item in items[:12]:  # take more to filter later
+        for item in items[:10]:
             title = item.title.text
             link = item.link.text
 
-            try:
-                page = requests.get(link, timeout=15)
-                soup_page = BeautifulSoup(page.text, "html.parser")
+            content, author = extract_article(link)
 
-                # Main content
-                content_div = soup_page.find("div", class_="story__content")
-
-                if content_div:
-                    paragraphs = content_div.find_all("p")
-                else:
-                    paragraphs = soup_page.find_all("p")
-
-                content = " ".join(
-                    p.get_text(strip=True)
-                    for p in paragraphs
-                    if p.get_text(strip=True)
-                )
-
-                # Skip weak articles
-                if len(content) < 300:
-                    continue
-
-                # Author
-                author = "Unknown"
-                for sel in [".byline__name", ".story__byline", ".author"]:
-                    tag = soup_page.select_one(sel)
-                    if tag:
-                        author = tag.get_text(strip=True)
-                        break
-
+            if len(content) > 300:
                 articles.append({
                     "title": title,
                     "content": content,
                     "author": author
                 })
 
-                if len(articles) >= 6:
-                    break
-
-            except Exception as e:
-                print("Skipping:", e)
-                continue
-
-        return articles
+            if len(articles) >= 6:
+                return articles
 
     except Exception as e:
-        print("RSS error:", e)
-        return []
+        print("RSS failed:", e)
+
+    # =========================
+    # 2. FALLBACK → HTML SCRAPE
+    # =========================
+    try:
+        r = requests.get(BASE + "/opinion", headers=headers, timeout=15)
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        links = []
+
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            title = a.get_text(strip=True)
+
+            if href.startswith("/") and len(title) > 25:
+                full = BASE + href
+                links.append((title, full))
+
+        # deduplicate
+        seen = set()
+        clean = []
+        for t, l in links:
+            if l not in seen:
+                seen.add(l)
+                clean.append((t, l))
+
+        for title, link in clean[:12]:
+            content, author = extract_article(link)
+
+            if len(content) > 300:
+                articles.append({
+                    "title": title,
+                    "content": content,
+                    "author": author
+                })
+
+            if len(articles) >= 6:
+                return articles
+
+    except Exception as e:
+        print("HTML fallback failed:", e)
+
+    # =========================
+    # 3. HARD FALLBACK (NEVER EMPTY)
+    # =========================
+    if not articles:
+        return [{
+            "title": "Fallback: Could not fetch live articles",
+            "content": "Your network or Dawn blocking is preventing scraping. Check connection or try again later.",
+            "author": "System"
+        }]
+
+    return articles
 # =========================
 # ⚠️ EVERYTHING BELOW UNCHANGED
 # =========================
