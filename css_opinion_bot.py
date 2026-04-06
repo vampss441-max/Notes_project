@@ -45,48 +45,31 @@ FAST_MODEL = "llama-3.1-8b-instant"
 def scrape_opinions():
     import requests
     from bs4 import BeautifulSoup
-    from urllib.parse import quote
 
-    BASE = "https://www.dawn.com"
-    PROXY = "https://textise.net/showtext.aspx?strURL="
+    BASE = "https://tribune.com.pk"
 
     headers = {
         "User-Agent": "Mozilla/5.0"
     }
 
-    def fetch(url):
-        safe_url = PROXY + quote(url, safe="")
-        return requests.get(safe_url, headers=headers, timeout=20)
-
     try:
-        # Step 1: Fetch opinion page via proxy
-        res = fetch(BASE + "/opinion")
+        res = requests.get(f"{BASE}/opinion", headers=headers, timeout=15)
         soup = BeautifulSoup(res.text, "html.parser")
-
-        links = []
-
-        for a in soup.find_all("a", href=True):
-            href = a["href"]
-            title = a.get_text(strip=True)
-
-            if "/opinion/" in href and len(title) > 25:
-                full = href if href.startswith("http") else BASE + href
-                links.append((title, full))
-
-        # Deduplicate
-        seen = set()
-        clean_links = []
-        for t, l in links:
-            if l not in seen:
-                seen.add(l)
-                clean_links.append((t, l))
 
         articles = []
 
-        # Step 2: Fetch each article
-        for title, link in clean_links[:10]:
+        # 🔥 Tribune opinion cards
+        for a in soup.select("h2 a, h3 a"):
+            title = a.get_text(strip=True)
+            link = a.get("href")
+
+            if not title or not link:
+                continue
+
+            full_link = link if link.startswith("http") else BASE + link
+
             try:
-                page = fetch(link)
+                page = requests.get(full_link, headers=headers, timeout=15)
                 soup_page = BeautifulSoup(page.text, "html.parser")
 
                 paragraphs = soup_page.find_all("p")
@@ -100,10 +83,16 @@ def scrape_opinions():
                 if len(content) < 300:
                     continue
 
+                # Author
+                author = "Unknown"
+                author_tag = soup_page.select_one(".author, .author-name")
+                if author_tag:
+                    author = author_tag.get_text(strip=True)
+
                 articles.append({
                     "title": title,
                     "content": content,
-                    "author": "Dawn"
+                    "author": author
                 })
 
                 if len(articles) >= 6:
@@ -116,7 +105,7 @@ def scrape_opinions():
         return articles
 
     except Exception as e:
-        print("Proxy failed:", e)
+        print("Tribune scrape failed:", e)
         return []
 # =========================
 # ⚠️ EVERYTHING BELOW UNCHANGED
@@ -185,54 +174,67 @@ Article:
 # =========================
 # UI (UNCHANGED)
 # =========================
-tab1, tab2, tab3 = st.tabs(["Fetch Opinions", "Generate Notes", "Daily Learning Capsule"])
+# =========================
+# TABS
+# =========================
+tab1, tab2, tab3 = st.tabs([
+    "Fetch Opinions",
+    "Generate Notes",
+    "Daily Learning Capsule"
+])
 
 # =========================
-# TAB 1 — FETCH + SELECT ARTICLES
+# TAB 1 — FETCH + SELECT
 # =========================
 with tab1:
 
-    st.subheader("📰 Fetch Dawn Opinion Articles")
+    st.subheader("📰 Tribune Opinion Articles")
 
+    # ---------- FETCH BUTTON ----------
     if st.button("Fetch Top Opinions"):
+        with st.spinner("Fetching from Tribune..."):
+            articles = scrape_opinions()
 
-        # 🔥 ADD DEBUG HERE
-        import requests
-        st.write("Google:", requests.get("https://www.google.com").status_code)
-        st.write("Dawn:", requests.get("https://www.dawn.com").status_code)
+            # Save in session safely
+            st.session_state["articles"] = articles
 
-        with st.spinner("Fetching latest articles..."):
-            st.session_state["articles"] = scrape_opinions()
+            # Initialize checkbox states
+            for i in range(len(articles)):
+                st.session_state[f"article_{i}"] = True
 
-        if not st.session_state["articles"]:
+        if not articles:
             st.error("❌ No articles found! Try again.")
         else:
-            st.success(f"✅ Fetched {len(st.session_state['articles'])} articles")
+            st.success(f"✅ Fetched {len(articles)} articles")
 
-    # ---------- SHOW ARTICLES ----------
+    # ---------- DISPLAY ----------
     if "articles" not in st.session_state:
-        st.info("Click 'Fetch Top Opinions' to load articles.")
+        st.info("👆 Click 'Fetch Top Opinions' to load articles.")
+
     elif not st.session_state["articles"]:
         st.warning("No articles available.")
+
     else:
         st.markdown("### 📌 Select Articles for Notes Generation")
 
         selected_articles = []
 
         for i, art in enumerate(st.session_state["articles"]):
+
             key = f"article_{i}"
 
             with st.container():
                 col1, col2 = st.columns([1, 10])
 
+                # Checkbox (persistent)
                 with col1:
-                    checked = st.checkbox("", value=True, key=key)
+                    checked = st.checkbox("", key=key)
 
+                # Content
                 with col2:
                     st.markdown(f"**{art['title']}**")
                     st.caption(f"✍️ {art['author']}")
 
-                    # Preview content
                     preview = art["content"][:300] + "..."
                     st.write(preview)
 
@@ -241,7 +243,84 @@ with tab1:
             if checked:
                 selected_articles.append(art)
 
+        # Save selection
         st.session_state["selected_articles"] = selected_articles
 
-        # ---------- SUMMARY ----------
-        st.success(f"📚 Selected {len(selected_articles)} articles for note generation")
+        st.success(f"📚 Selected {len(selected_articles)} articles")
+
+# =========================
+# TAB 2 — GENERATE NOTES
+# =========================
+with tab2:
+
+    st.subheader("🧠 Generate CSS Notes")
+
+    mode = st.selectbox(
+        "Select Notes Mode",
+        ["Bullet Dominant Hybrid", "Paragraph Dominant Hybrid"]
+    )
+
+    font_theme = st.selectbox(
+        "Select Font Theme",
+        ["Classic Serif", "Modern Sans"]
+    )
+
+    st.session_state["font_theme"] = font_theme
+
+    if "selected_articles" not in st.session_state or not st.session_state["selected_articles"]:
+        st.warning("⚠️ Please select articles from Tab 1 first.")
+
+    else:
+        if st.button("Generate CSS Notes"):
+            results = []
+
+            with st.spinner("Generating notes..."):
+                for art in st.session_state["selected_articles"]:
+                    notes = generate_css_notes(art, mode)
+
+                    results.append({
+                        "title": art["title"],
+                        "notes": notes,
+                        "author": art["author"]
+                    })
+
+            st.session_state["notes"] = results
+            st.success("✅ Notes Generated")
+
+# =========================
+# SHOW NOTES + DOWNLOAD
+# =========================
+if "notes" in st.session_state:
+
+    st.subheader("📘 Generated Notes")
+
+    for item in st.session_state["notes"]:
+        with st.expander(item["title"], expanded=True):
+            st.markdown(item["notes"])
+
+    pdf_bytes = generate_pdf(
+        st.session_state["notes"],
+        st.session_state.get("font_theme", "Classic Serif")
+    )
+
+    st.download_button(
+        "⬇️ Download PDF",
+        pdf_bytes,
+        file_name=f"Daily_Opinion_Notes_{file_date}.pdf",
+        mime="application/pdf"
+    )
+
+# =========================
+# TAB 3 — CAPSULE
+# =========================
+with tab3:
+
+    st.subheader("📘 Daily Learning Capsule")
+
+    if st.button("Generate Capsule"):
+        capsule = get_daily_capsule()
+        st.session_state["capsule_display"] = capsule
+
+    if "capsule_display" in st.session_state:
+        capsule_text = format_capsule_text(st.session_state["capsule_display"])
+        st.markdown(capsule_text, unsafe_allow_html=True)
