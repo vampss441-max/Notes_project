@@ -44,15 +44,11 @@ FAST_MODEL = "llama-3.1-8b-instant"
 
 # =========================
 # SCRAPER — Dawn.com (requests + BeautifulSoup, no Playwright)
+# Both Opinions and Editorials live on https://www.dawn.com/opinion
+# Fetches 4 opinions + 2 editorials from that single page
 # =========================
 def scrape_opinions():
-    """
-    Scrape top 6 opinion articles from Dawn.com/opinion.
-    Uses requests + BeautifulSoup — works on Streamlit Cloud.
-    Returns a list of dicts: [{'title', 'content', 'author'}]
-    """
     BASE = "https://www.dawn.com"
-    OPINION_URL = "https://www.dawn.com/opinion"
 
     HEADERS = {
         "User-Agent": (
@@ -65,89 +61,119 @@ def scrape_opinions():
         "Referer": "https://www.google.com/",
     }
 
-    candidates = []
-    seen_urls = set()
-
-    try:
-        res = requests.get(OPINION_URL, headers=HEADERS, timeout=20)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, "html.parser")
-
-        # Primary: <article> cards
-        for card in soup.find_all("article"):
-            a = card.find("a", href=True)
-            if not a:
-                continue
-            title = a.get_text(strip=True)
-            href = a["href"]
-            if not title or len(title) < 15:
-                continue
-            full_url = href if href.startswith("http") else BASE + href
-            if full_url not in seen_urls:
-                seen_urls.add(full_url)
-                candidates.append((title, full_url))
-
-        # Fallback: h2/h3 links
-        if len(candidates) < 3:
-            for tag in soup.select("h2 a, h3 a"):
-                title = tag.get_text(strip=True)
-                href = tag.get("href", "")
-                if not title or len(title) < 15 or not href:
-                    continue
-                full_url = href if href.startswith("http") else BASE + href
-                if full_url not in seen_urls:
-                    seen_urls.add(full_url)
-                    candidates.append((title, full_url))
-
-    except Exception as e:
-        st.error(f"Could not load Dawn opinion page: {e}")
-        return []
-
-    # Fetch each article
-    final_articles = []
-    for title, full_url in candidates:
-        if len(final_articles) >= 6:
-            break
+    def fetch_article_content(title, full_url, default_author="Unknown"):
+        """Fetch full text + author for a single article."""
         try:
             time.sleep(random.uniform(0.8, 1.8))
-            page_res = requests.get(full_url, headers=HEADERS, timeout=20)
-            page_res.raise_for_status()
-            soup_page = BeautifulSoup(page_res.text, "html.parser")
+            res = requests.get(full_url, headers=HEADERS, timeout=20)
+            res.raise_for_status()
+            soup = BeautifulSoup(res.text, "html.parser")
 
-            # Article body selectors (Dawn uses .story__content)
             body = None
             for sel in [".story__content", ".template-story__body",
                         ".entry-body", "article .content", "article"]:
-                body = soup_page.select_one(sel)
+                body = soup.select_one(sel)
                 if body:
                     break
 
-            paragraphs = body.find_all("p") if body else soup_page.find_all("p")
+            paragraphs = body.find_all("p") if body else soup.find_all("p")
             content = " ".join(
                 p.get_text(strip=True) for p in paragraphs
                 if len(p.get_text(strip=True)) > 40
             )
 
             if len(content) < 300:
-                continue
+                return None
 
-            # Author — Dawn uses .story__byline or .byline__name
-            author = "Unknown"
+            author = default_author
             for sel in [".byline__name", ".story__byline", ".author", "[rel='author']"]:
-                tag = soup_page.select_one(sel)
+                tag = soup.select_one(sel)
                 if tag:
-                    author = tag.get_text(strip=True)
-                    break
+                    text = tag.get_text(strip=True)
+                    if text:
+                        author = text
+                        break
 
-            final_articles.append({
-                "title": title,
-                "content": content,
-                "author": author
-            })
+            return {"title": title, "content": content, "author": author}
 
         except Exception as e:
             st.warning(f"Skipped: {title[:50]} — {e}")
+            return None
+
+    # ---- Load the single opinion page ----
+    try:
+        res = requests.get("https://www.dawn.com/opinion", headers=HEADERS, timeout=20)
+        res.raise_for_status()
+        soup = BeautifulSoup(res.text, "html.parser")
+    except Exception as e:
+        st.error(f"Could not load Dawn opinion page: {e}")
+        return []
+
+    opinion_links = []   # (title, url, author)
+    editorial_links = [] # (title, url)
+
+    # Dawn page has <h2> section headers: "Opinion" and "Editorial"
+    # Walk through all heading tags to find the sections
+    current_section = None
+    for tag in soup.find_all(["h2", "h3", "a"]):
+        if tag.name == "h2":
+            text = tag.get_text(strip=True).lower()
+            if text == "opinion":
+                current_section = "opinion"
+            elif text == "editorial":
+                current_section = "editorial"
+            elif text in ("branded content", "analysis & comment", "read more"):
+                current_section = None  # stop collecting
             continue
+
+        if tag.name == "a" and current_section in ("opinion", "editorial"):
+            href = tag.get("href", "")
+            title = tag.get_text(strip=True)
+            if not title or len(title) < 10 or not href:
+                continue
+            # Only article links (not author profile links)
+            if "/authors/" in href or href in ("#", "/opinion", "/editorial"):
+                continue
+            full_url = href if href.startswith("http") else BASE + href
+
+            if current_section == "opinion" and len(opinion_links) < 4:
+                # Try to get author from a nearby sibling tag on same page
+                opinion_links.append((title, full_url))
+            elif current_section == "editorial" and len(editorial_links) < 2:
+                editorial_links.append((title, full_url))
+
+    # Also grab author names shown on the listing page (Dawn shows author under each opinion)
+    # Build a title->author map from the page
+    author_map = {}
+    for a_tag in soup.select("a[href*='/authors/']"):
+        # The article title is usually in the preceding or parent heading
+        author_name = a_tag.get_text(strip=True)
+        # Walk up to find nearest h2/h3 sibling
+        parent = a_tag.find_parent()
+        while parent:
+            heading = parent.find(["h2", "h3"])
+            if heading and heading.find("a"):
+                article_title = heading.find("a").get_text(strip=True)
+                if article_title:
+                    author_map[article_title] = author_name
+                    break
+            parent = parent.find_parent()
+
+    # ---- Fetch article content ----
+    final_articles = []
+
+    for title, url in opinion_links:
+        author_default = author_map.get(title, "Unknown")
+        article = fetch_article_content(title, url, default_author=author_default)
+        if article:
+            final_articles.append(article)
+
+    for title, url in editorial_links:
+        article = fetch_article_content(title, url, default_author="Editorial")
+        if article:
+            if article["author"] == "Unknown":
+                article["author"] = "Editorial"
+            final_articles.append(article)
 
     return final_articles
 ANALYTICAL_SENTENCES = [
