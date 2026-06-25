@@ -230,11 +230,28 @@ Article:
 {article['content'][:6000]}
 """
 
-    response = client.chat.completions.create(
-        model=FAST_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.3
-    )
+    # Retry with exponential backoff to handle Groq rate limits
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=FAST_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3
+            )
+            break  # success — exit retry loop
+        except Exception as e:
+            error_str = str(e).lower()
+            if "rate_limit" in error_str or "429" in error_str or "ratelimit" in error_str:
+                if attempt < max_retries - 1:
+                    wait_time = 60 * (attempt + 1)  # 60s, 120s, 180s, 240s
+                    st.warning(f"⏳ Groq rate limit hit. Waiting {wait_time}s before retrying... (attempt {attempt+1}/{max_retries})")
+                    time.sleep(wait_time)
+                else:
+                    st.error("❌ Groq rate limit exceeded after all retries. Please wait a few minutes and try again.")
+                    raise
+            else:
+                raise  # non-rate-limit error — raise immediately
 
     notes_text = response.choices[0].message.content
     cleaned_notes = "\n".join([line for line in notes_text.split("\n") if "Note: the phrasal verbs" not in line])
@@ -740,19 +757,24 @@ with tab2:
     if "selected_articles" in st.session_state and st.session_state["selected_articles"]:
         if st.button("Generate CSS Notes"):
             results = []
+            total = len(st.session_state["selected_articles"])
+            progress = st.progress(0)
 
-            with st.spinner("Generating..."):
-                for art in st.session_state["selected_articles"]:
+            for idx, art in enumerate(st.session_state["selected_articles"]):
+                with st.spinner(f"Generating notes {idx+1}/{total}: {art['title'][:60]}..."):
                     notes = generate_css_notes(art, mode)
-
                     results.append({
                         "title": art["title"],
                         "notes": notes,
                         "author": art["author"]
                     })
+                progress.progress((idx + 1) / total)
+                # Pause between articles to avoid hitting Groq rate limits
+                if idx < total - 1:
+                    time.sleep(15)
 
             st.session_state["notes"] = results
-            st.success("Notes Generated")
+            st.success("✅ Notes Generated")
 
 # =========================
 # SHOW NOTES + DOWNLOAD PDF
