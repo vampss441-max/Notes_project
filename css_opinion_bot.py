@@ -50,22 +50,32 @@ FAST_MODEL = "llama-3.1-8b-instant"
 def scrape_opinions():
     BASE = "https://www.dawn.com"
 
-    HEADERS = {
+    # Full realistic browser headers — Dawn checks these to block bots
+    session = requests.Session()
+    session.headers.update({
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/122.0.0.0 Safari/537.36"
+            "Chrome/124.0.0.0 Safari/537.36"
         ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Cache-Control": "max-age=0",
         "Referer": "https://www.google.com/",
-    }
+    })
 
     def fetch_article_content(title, full_url, default_author="Unknown"):
         """Fetch full text + author for a single article."""
         try:
             time.sleep(random.uniform(0.8, 1.8))
-            res = requests.get(full_url, headers=HEADERS, timeout=20)
+            res = session.get(full_url, timeout=20)
             res.raise_for_status()
             soup = BeautifulSoup(res.text, "html.parser")
 
@@ -102,7 +112,7 @@ def scrape_opinions():
 
     # ---- Load the single opinion page ----
     try:
-        res = requests.get("https://www.dawn.com/opinion", headers=HEADERS, timeout=20)
+        res = session.get("https://www.dawn.com/opinion", timeout=20)
         res.raise_for_status()
         soup = BeautifulSoup(res.text, "html.parser")
     except Exception as e:
