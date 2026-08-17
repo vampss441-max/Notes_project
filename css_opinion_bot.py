@@ -5,6 +5,7 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
+import xml.etree.ElementTree as ET
 import time
 from groq import Groq
 from reportlab.platypus import (
@@ -48,17 +49,27 @@ FAST_MODEL = "llama-3.1-8b-instant"
 # Fetches 4 opinions + 2 editorials from that single page
 # =========================
 def scrape_opinions():
-    BASE = "https://www.dawn.com"
-
-    # Full realistic browser headers — Dawn checks these to block bots
-    session = requests.Session()
-    session.headers.update({
+    """
+    Fetches Dawn opinion + editorial articles via Google News RSS.
+    Google News RSS is plain XML — no JS rendering, no bot blocking.
+    4 opinions + 2 editorials from two separate queries.
+    """
+    HEADERS = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/124.0.0.0 Safari/537.36"
         ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    ARTICLE_HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "gzip, deflate, br",
         "Connection": "keep-alive",
@@ -66,16 +77,39 @@ def scrape_opinions():
         "Sec-Fetch-Dest": "document",
         "Sec-Fetch-Mode": "navigate",
         "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
         "Cache-Control": "max-age=0",
-        "Referer": "https://www.google.com/",
-    })
+    }
+
+    def get_urls_from_google_rss(query, limit):
+        """Query Google News RSS and return (title, url) pairs for dawn.com articles."""
+        rss_url = f"https://news.google.com/rss/search?q={requests.utils.quote(query)}&hl=en-PK&gl=PK&ceid=PK:en"
+        results = []
+        try:
+            res = requests.get(rss_url, headers=HEADERS, timeout=20)
+            res.raise_for_status()
+            root = ET.fromstring(res.content)
+            for item in root.findall(".//item"):
+                title_el = item.find("title")
+                link_el = item.find("link")
+                if title_el is None or link_el is None:
+                    continue
+                title = title_el.text or ""
+                link = link_el.text or ""
+                # Google News wraps in its own redirect — get the real URL
+                # Real dawn.com links appear directly in some feeds
+                if "dawn.com" in link:
+                    results.append((title.strip(), link.strip()))
+                    if len(results) >= limit:
+                        break
+        except Exception as e:
+            st.warning(f"Google RSS error: {e}")
+        return results
 
     def fetch_article_content(title, full_url, default_author="Unknown"):
-        """Fetch full text + author for a single article."""
+        """Fetch full text + author from a Dawn article page."""
         try:
-            time.sleep(random.uniform(0.8, 1.8))
-            res = session.get(full_url, timeout=20)
+            time.sleep(random.uniform(1.0, 2.0))
+            res = requests.get(full_url, headers=ARTICLE_HEADERS, timeout=20)
             res.raise_for_status()
             soup = BeautifulSoup(res.text, "html.parser")
 
@@ -91,7 +125,6 @@ def scrape_opinions():
                 p.get_text(strip=True) for p in paragraphs
                 if len(p.get_text(strip=True)) > 40
             )
-
             if len(content) < 300:
                 return None
 
@@ -110,75 +143,29 @@ def scrape_opinions():
             st.warning(f"Skipped: {title[:50]} — {e}")
             return None
 
-    # ---- Load the single opinion page ----
-    try:
-        res = session.get("https://www.dawn.com/opinion", timeout=20)
-        res.raise_for_status()
-        soup = BeautifulSoup(res.text, "html.parser")
-    except Exception as e:
-        st.error(f"Could not load Dawn opinion page: {e}")
-        return []
-
-    opinion_links = []   # (title, url, author)
-    editorial_links = [] # (title, url)
-
-    # Dawn page has <h2> section headers: "Opinion" and "Editorial"
-    # Walk through all heading tags to find the sections
-    current_section = None
-    for tag in soup.find_all(["h2", "h3", "a"]):
-        if tag.name == "h2":
-            text = tag.get_text(strip=True).lower()
-            if text == "opinion":
-                current_section = "opinion"
-            elif text == "editorial":
-                current_section = "editorial"
-            elif text in ("branded content", "analysis & comment", "read more"):
-                current_section = None  # stop collecting
-            continue
-
-        if tag.name == "a" and current_section in ("opinion", "editorial"):
-            href = tag.get("href", "")
-            title = tag.get_text(strip=True)
-            if not title or len(title) < 10 or not href:
-                continue
-            # Only article links (not author profile links)
-            if "/authors/" in href or href in ("#", "/opinion", "/editorial"):
-                continue
-            full_url = href if href.startswith("http") else BASE + href
-
-            if current_section == "opinion" and len(opinion_links) < 4:
-                # Try to get author from a nearby sibling tag on same page
-                opinion_links.append((title, full_url))
-            elif current_section == "editorial" and len(editorial_links) < 2:
-                editorial_links.append((title, full_url))
-
-    # Also grab author names shown on the listing page (Dawn shows author under each opinion)
-    # Build a title->author map from the page
-    author_map = {}
-    for a_tag in soup.select("a[href*='/authors/']"):
-        # The article title is usually in the preceding or parent heading
-        author_name = a_tag.get_text(strip=True)
-        # Walk up to find nearest h2/h3 sibling
-        parent = a_tag.find_parent()
-        while parent:
-            heading = parent.find(["h2", "h3"])
-            if heading and heading.find("a"):
-                article_title = heading.find("a").get_text(strip=True)
-                if article_title:
-                    author_map[article_title] = author_name
-                    break
-            parent = parent.find_parent()
-
-    # ---- Fetch article content ----
     final_articles = []
+    seen_urls = set()
 
-    for title, url in opinion_links:
-        author_default = author_map.get(title, "Unknown")
-        article = fetch_article_content(title, url, default_author=author_default)
+    # ---- 4 Opinion articles ----
+    opinion_items = get_urls_from_google_rss("site:dawn.com/opinion", limit=8)
+    for title, url in opinion_items:
+        if len(final_articles) >= 4:
+            break
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        article = fetch_article_content(title, url)
         if article:
             final_articles.append(article)
 
-    for title, url in editorial_links:
+    # ---- 2 Editorial articles ----
+    editorial_items = get_urls_from_google_rss("site:dawn.com/editorial", limit=5)
+    for title, url in editorial_items:
+        if len(final_articles) >= 6:
+            break
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
         article = fetch_article_content(title, url, default_author="Editorial")
         if article:
             if article["author"] == "Unknown":
@@ -186,6 +173,8 @@ def scrape_opinions():
             final_articles.append(article)
 
     return final_articles
+
+
 ANALYTICAL_SENTENCES = [
     "Understanding this debate requires examining the broader geopolitical context.",
     "This issue reflects deeper tensions in global power politics.",
