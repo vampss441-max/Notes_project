@@ -50,20 +50,11 @@ FAST_MODEL = "llama-3.1-8b-instant"
 # =========================
 def scrape_opinions():
     """
-    Fetches Dawn opinion + editorial articles via Google News RSS.
-    Google News RSS is plain XML — no JS rendering, no bot blocking.
-    4 opinions + 2 editorials from two separate queries.
+    Scrapes Dawn opinion columns + editorials.
+    Uses dawn.com/newspaper/column (4 articles) and dawn.com/newspaper/editorial (2 articles).
+    These pages load fine with requests. Article URLs follow pattern: dawn.com/news/XXXXXXX
     """
     HEADERS = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept-Language": "en-US,en;q=0.9",
-    }
-
-    ARTICLE_HEADERS = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -80,36 +71,59 @@ def scrape_opinions():
         "Cache-Control": "max-age=0",
     }
 
-    def get_urls_from_google_rss(query, limit):
-        """Query Google News RSS and return (title, url) pairs for dawn.com articles."""
-        rss_url = f"https://news.google.com/rss/search?q={requests.utils.quote(query)}&hl=en-PK&gl=PK&ceid=PK:en"
+    def get_links_from_listing(url, limit):
+        """Extract article (title, url, author) from a Dawn newspaper listing page."""
         results = []
         try:
-            res = requests.get(rss_url, headers=HEADERS, timeout=20)
+            res = requests.get(url, headers=HEADERS, timeout=20)
             res.raise_for_status()
-            root = ET.fromstring(res.content)
-            for item in root.findall(".//item"):
-                title_el = item.find("title")
-                link_el = item.find("link")
-                if title_el is None or link_el is None:
+            soup = BeautifulSoup(res.text, "html.parser")
+
+            # Dawn listing pages: each article is in an <article> or <div> with an <a> linking to /news/
+            seen = set()
+            for a in soup.find_all("a", href=True):
+                href = a["href"]
+                # All Dawn articles are at /news/NNNNNNN
+                if "/news/" not in href:
                     continue
-                title = title_el.text or ""
-                link = link_el.text or ""
-                # Google News wraps in its own redirect — get the real URL
-                # Real dawn.com links appear directly in some feeds
-                if "dawn.com" in link:
-                    results.append((title.strip(), link.strip()))
-                    if len(results) >= limit:
-                        break
+                full_url = href if href.startswith("http") else "https://www.dawn.com" + href
+                if full_url in seen:
+                    continue
+                seen.add(full_url)
+
+                title = a.get_text(strip=True)
+                if not title or len(title) < 8:
+                    # Try parent for title
+                    parent = a.find_parent(["h2", "h3", "h4", "div", "article"])
+                    if parent:
+                        title = parent.get_text(strip=True)[:100]
+                if not title or len(title) < 8:
+                    continue
+
+                # Author: look for nearby text that isn't the title
+                author = "Unknown"
+                parent_block = a.find_parent(["article", "div", "li"])
+                if parent_block:
+                    # Dawn shows author name as text near the link
+                    texts = [t.strip() for t in parent_block.stripped_strings]
+                    for t in texts:
+                        if t and t != title and len(t) < 50 and t[0].isupper():
+                            author = t
+                            break
+
+                results.append((title, full_url, author))
+                if len(results) >= limit:
+                    break
+
         except Exception as e:
-            st.warning(f"Google RSS error: {e}")
+            st.error(f"Could not load listing page {url}: {e}")
         return results
 
     def fetch_article_content(title, full_url, default_author="Unknown"):
         """Fetch full text + author from a Dawn article page."""
         try:
             time.sleep(random.uniform(1.0, 2.0))
-            res = requests.get(full_url, headers=ARTICLE_HEADERS, timeout=20)
+            res = requests.get(full_url, headers=HEADERS, timeout=20)
             res.raise_for_status()
             soup = BeautifulSoup(res.text, "html.parser")
 
@@ -146,21 +160,21 @@ def scrape_opinions():
     final_articles = []
     seen_urls = set()
 
-    # ---- 4 Opinion articles ----
-    opinion_items = get_urls_from_google_rss("site:dawn.com/opinion", limit=8)
-    for title, url in opinion_items:
+    # ---- 4 Opinion columns ----
+    col_items = get_links_from_listing("https://www.dawn.com/newspaper/column", limit=8)
+    for title, url, author in col_items:
         if len(final_articles) >= 4:
             break
         if url in seen_urls:
             continue
         seen_urls.add(url)
-        article = fetch_article_content(title, url)
+        article = fetch_article_content(title, url, default_author=author)
         if article:
             final_articles.append(article)
 
-    # ---- 2 Editorial articles ----
-    editorial_items = get_urls_from_google_rss("site:dawn.com/editorial", limit=5)
-    for title, url in editorial_items:
+    # ---- 2 Editorials ----
+    ed_items = get_links_from_listing("https://www.dawn.com/newspaper/editorial", limit=5)
+    for title, url, author in ed_items:
         if len(final_articles) >= 6:
             break
         if url in seen_urls:
