@@ -50,40 +50,30 @@ FAST_MODEL = "llama-3.1-8b-instant"
 # =========================
 def scrape_opinions():
     """
-    Scrapes Dawn opinion columns + editorials.
+    Scrapes Dawn opinion columns + editorials using cloudscraper,
+    which handles Cloudflare/WAF bot protection automatically.
     Uses dawn.com/newspaper/column (4 articles) and dawn.com/newspaper/editorial (2 articles).
-    These pages load fine with requests. Article URLs follow pattern: dawn.com/news/XXXXXXX
     """
-    HEADERS = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Upgrade-Insecure-Requests": "1",
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Cache-Control": "max-age=0",
-    }
+    try:
+        import cloudscraper
+        scraper = cloudscraper.create_scraper(
+            browser={"browser": "chrome", "platform": "windows", "mobile": False}
+        )
+    except ImportError:
+        st.error("Missing library: add 'cloudscraper' to requirements.txt")
+        return []
 
     def get_links_from_listing(url, limit):
         """Extract article (title, url, author) from a Dawn newspaper listing page."""
         results = []
         try:
-            res = requests.get(url, headers=HEADERS, timeout=20)
+            res = scraper.get(url, timeout=20)
             res.raise_for_status()
             soup = BeautifulSoup(res.text, "html.parser")
 
-            # Dawn listing pages: each article is in an <article> or <div> with an <a> linking to /news/
             seen = set()
             for a in soup.find_all("a", href=True):
                 href = a["href"]
-                # All Dawn articles are at /news/NNNNNNN
                 if "/news/" not in href:
                     continue
                 full_url = href if href.startswith("http") else "https://www.dawn.com" + href
@@ -93,18 +83,15 @@ def scrape_opinions():
 
                 title = a.get_text(strip=True)
                 if not title or len(title) < 8:
-                    # Try parent for title
                     parent = a.find_parent(["h2", "h3", "h4", "div", "article"])
                     if parent:
                         title = parent.get_text(strip=True)[:100]
                 if not title or len(title) < 8:
                     continue
 
-                # Author: look for nearby text that isn't the title
                 author = "Unknown"
                 parent_block = a.find_parent(["article", "div", "li"])
                 if parent_block:
-                    # Dawn shows author name as text near the link
                     texts = [t.strip() for t in parent_block.stripped_strings]
                     for t in texts:
                         if t and t != title and len(t) < 50 and t[0].isupper():
@@ -123,7 +110,7 @@ def scrape_opinions():
         """Fetch full text + author from a Dawn article page."""
         try:
             time.sleep(random.uniform(1.0, 2.0))
-            res = requests.get(full_url, headers=HEADERS, timeout=20)
+            res = scraper.get(full_url, timeout=20)
             res.raise_for_status()
             soup = BeautifulSoup(res.text, "html.parser")
 
