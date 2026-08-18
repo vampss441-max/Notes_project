@@ -44,47 +44,35 @@ client = Groq(api_key=api_key)
 FAST_MODEL = "llama-3.1-8b-instant"
 
 # =========================
-# SCRAPER — Dawn.com (requests + BeautifulSoup, no Playwright)
-# Both Opinions and Editorials live on https://www.dawn.com/opinion
-# Fetches 4 opinions + 2 editorials from that single page
+# SCRAPER — reads articles.json from GitHub (scraped daily by GitHub Actions)
+# GitHub Actions runs scrape_dawn.py on GitHub servers at 6AM PKT
+# Streamlit fetches the result via raw.githubusercontent.com (always accessible)
 # =========================
-def parse_pasted_articles(raw_text):
-    """
-    Parses manually pasted article text.
-    User pastes multiple articles separated by a clear delimiter.
-    Format:
-        TITLE: Some Title
-        AUTHOR: Some Author
-        ---
-        Article body text here...
-        ===
-        TITLE: Second Article
-        ...
-    """
-    articles = []
-    # Split by === delimiter
-    blocks = [b.strip() for b in raw_text.strip().split("===") if b.strip()]
-    for block in blocks:
-        lines = block.strip().splitlines()
-        title = "Untitled"
-        author = "Unknown"
-        body_lines = []
-        body_started = False
-        for line in lines:
-            if line.startswith("TITLE:"):
-                title = line.replace("TITLE:", "").strip()
-            elif line.startswith("AUTHOR:"):
-                author = line.replace("AUTHOR:", "").strip()
-            elif line.strip() == "---":
-                body_started = True
-            elif body_started:
-                body_lines.append(line)
-            elif not body_started and not line.startswith("TITLE:") and not line.startswith("AUTHOR:"):
-                body_lines.append(line)
-        content = " ".join(body_lines).strip()
-        if len(content) > 100:
-            articles.append({"title": title, "author": author, "content": content})
-    return articles
+
+# ⚠️ CHANGE THIS to your actual GitHub username and repo name
+GITHUB_USER = "vampss441"
+GITHUB_REPO = "notes_project"
+GITHUB_BRANCH = "main"
+
+@st.cache_data(ttl=3600)  # cache for 1 hour
+def scrape_opinions():
+    json_url = f"https://raw.githubusercontent.com/{GITHUB_USER}/{GITHUB_REPO}/{GITHUB_BRANCH}/articles.json"
+    try:
+        r = requests.get(json_url, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        articles = data.get("articles", [])
+        date = data.get("date", "")
+        if articles:
+            st.info(f"📅 Articles from: {date}")
+        return articles
+    except Exception as e:
+        st.error(f"Could not load articles from GitHub: {e}")
+        st.markdown(
+            "**Setup required:** Add `scrape_dawn.py` and `.github/workflows/scrape.yml` "
+            "to your repo, then run the workflow once manually from GitHub → Actions tab."
+        )
+        return []
 
 
 ANALYTICAL_SENTENCES = [
@@ -627,117 +615,31 @@ def generate_capsule_pdf():
 tab1, tab2, tab3 = st.tabs(["Fetch Opinions", "Generate Notes", "Daily Learning Capsule"])
 
 with tab1:
-    st.markdown("### Load Today's Dawn Articles")
+    st.subheader("📰 Today's Dawn Opinion Articles")
 
-    method = st.radio("Choose method:", ["Paste URLs", "Paste Article Text"], horizontal=True)
+    if st.button("🔄 Fetch Today's Opinions"):
+        st.cache_data.clear()
+        with st.spinner("Loading articles from GitHub..."):
+            articles = scrape_opinions()
+            st.session_state["articles"] = articles
+            for i in range(len(articles)):
+                st.session_state[f"article_{i}"] = True
 
-    if method == "Paste URLs":
-        st.info(
-            "1. Open [dawn.com/newspaper/column](https://www.dawn.com/newspaper/column) in your browser\n"
-            "2. Right-click each article title → Copy Link\n"
-            "3. Paste the links below, one per line"
-        )
-        urls_input = st.text_area(
-            "Paste Dawn article URLs (one per line)",
-            height=180,
-            placeholder="https://www.dawn.com/news/1234567\nhttps://www.dawn.com/news/7654321"
-        )
-        if st.button("Fetch from URLs"):
-            urls = [u.strip() for u in urls_input.strip().splitlines() if u.strip().startswith("http")]
-            if not urls:
-                st.warning("Please paste at least one URL.")
-            else:
-                articles = []
-                prog = st.progress(0)
-                for idx, url in enumerate(urls):
-                    with st.spinner(f"Fetching {idx+1}/{len(urls)}..."):
-                        try:
-                            import cloudscraper
-                            scraper = cloudscraper.create_scraper(browser={"browser":"chrome","platform":"windows","mobile":False})
-                            res = scraper.get(url, timeout=25)
-                        except Exception:
-                            import requests as req
-                            res = req.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=20)
-                        if res.status_code == 200:
-                            from bs4 import BeautifulSoup as BS
-                            soup = BS(res.text, "html.parser")
-                            body = None
-                            for sel in [".story__content",".template-story__body","article"]:
-                                body = soup.select_one(sel)
-                                if body: break
-                            paras = body.find_all("p") if body else soup.find_all("p")
-                            content = " ".join(p.get_text(strip=True) for p in paras if len(p.get_text(strip=True))>40)
-                            title_tag = soup.find("h1") or soup.find("h2")
-                            title = title_tag.get_text(strip=True) if title_tag else url
-                            author = "Unknown"
-                            for sel in [".byline__name",".story__byline",".author"]:
-                                t = soup.select_one(sel)
-                                if t: author = t.get_text(strip=True); break
-                            if len(content) > 200:
-                                articles.append({"title":title,"content":content,"author":author})
-                                st.success(f"✅ {title[:60]}")
-                            else:
-                                st.warning(f"Too short, skipped: {url}")
-                        else:
-                            st.error(f"❌ {res.status_code} for {url}")
-                    prog.progress((idx+1)/len(urls))
-                if articles:
-                    st.session_state["articles"] = articles
-                    for i in range(len(articles)):
-                        st.session_state[f"article_{i}"] = True
-                    st.success(f"Loaded {len(articles)} article(s) — go to Tab 2 to generate notes")
-                else:
-                    st.error("No articles loaded.")
-
-    else:
-        st.info(
-            "1. Open any Dawn article in your browser\n"
-            "2. Select all text **(Ctrl+A)** → Copy **(Ctrl+C)**\n"
-            "3. Paste below\n"
-            "4. For multiple articles, separate them with a line containing only: **===**"
-        )
-        raw_input = st.text_area(
-            "Paste article text here",
-            height=300,
-            placeholder="Paste full article text here...\n===\nPaste second article here..."
-        )
-        if st.button("Load Pasted Text"):
-            if not raw_input.strip():
-                st.warning("Please paste some text first.")
-            else:
-                blocks = [b.strip() for b in raw_input.strip().split("===") if len(b.strip()) > 200]
-                articles = []
-                for block in blocks:
-                    lines = block.strip().splitlines()
-                    title = lines[0].strip() if lines else "Untitled"
-                    content = " ".join(l.strip() for l in lines[1:] if l.strip())
-                    author = "Unknown"
-                    for line in lines[1:6]:
-                        if line.strip() and len(line.strip()) < 50 and not line.strip()[0].isupper() == False:
-                            candidate = line.strip()
-                            if len(candidate.split()) <= 5:
-                                author = candidate
-                                break
-                    articles.append({"title": title, "content": content, "author": author})
-                if articles:
-                    st.session_state["articles"] = articles
-                    for i in range(len(articles)):
-                        st.session_state[f"article_{i}"] = True
-                    st.success(f"Loaded {len(articles)} article(s)")
-                else:
-                    st.error("Could not parse. Make sure text is at least 200 characters per article.")
-
-    st.divider()
+        if not st.session_state.get("articles"):
+            st.error("No articles found. Check GitHub Actions ran successfully.")
+        else:
+            st.success(f"✅ Fetched {len(st.session_state['articles'])} articles")
 
     if "articles" in st.session_state and st.session_state["articles"]:
         selected_articles = []
-        st.markdown(f"**{len(st.session_state['articles'])} article(s) loaded — select for notes:**")
+        st.markdown(f"**Select articles to include:**")
         for i, art in enumerate(st.session_state["articles"]):
             key = f"article_{i}"
             if st.checkbox(f"{art['title']} — {art['author']}", value=True, key=key):
-                st.caption(art['content'][:300] + "...")
+                st.caption(art["content"][:250] + "...")
                 selected_articles.append(art)
         st.session_state["selected_articles"] = selected_articles
+
 
 # ===== TAB 2 =====
 with tab2:
