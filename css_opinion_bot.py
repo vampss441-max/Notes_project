@@ -48,162 +48,42 @@ FAST_MODEL = "llama-3.1-8b-instant"
 # Both Opinions and Editorials live on https://www.dawn.com/opinion
 # Fetches 4 opinions + 2 editorials from that single page
 # =========================
-def scrape_opinions():
+def parse_pasted_articles(raw_text):
     """
-    Scrapes Dawn newspaper/column + newspaper/editorial using cloudscraper.
-    cloudscraper bypasses Cloudflare/WAF bot protection at TLS level.
+    Parses manually pasted article text.
+    User pastes multiple articles separated by a clear delimiter.
+    Format:
+        TITLE: Some Title
+        AUTHOR: Some Author
+        ---
+        Article body text here...
+        ===
+        TITLE: Second Article
+        ...
     """
-    try:
-        import cloudscraper
-        scraper = cloudscraper.create_scraper(
-            browser={"browser": "chrome", "platform": "windows", "mobile": False}
-        )
-    except Exception as e:
-        st.error(f"cloudscraper error: {e}. Make sure requirements.txt contains: cloudscraper")
-        return []
-
-    def get_links_from_listing(url, limit):
-        results = []
-        try:
-            res = scraper.get(url, timeout=25)
-            res.raise_for_status()
-            soup = BeautifulSoup(res.text, "html.parser")
-            seen = set()
-            for a in soup.find_all("a", href=True):
-                href = a["href"]
-                if "/news/" not in href:
-                    continue
-                full_url = href if href.startswith("http") else "https://www.dawn.com" + href
-                if full_url in seen:
-                    continue
-                seen.add(full_url)
-                title = a.get_text(strip=True)
-                if not title or len(title) < 8:
-                    parent = a.find_parent(["h2", "h3", "h4", "div", "article"])
-                    if parent:
-                        title = parent.get_text(strip=True)[:100]
-                if not title or len(title) < 8:
-                    continue
-                author = "Unknown"
-                parent_block = a.find_parent(["article", "div", "li"])
-                if parent_block:
-                    texts = [t.strip() for t in parent_block.stripped_strings]
-                    for t in texts:
-                        if t and t != title and len(t) < 50 and t[0].isupper():
-                            author = t
-                            break
-                results.append((title, full_url, author))
-                if len(results) >= limit:
-                    break
-        except Exception as e:
-            st.warning(f"Listing fetch failed ({url}): {e}")
-        return results
-
-    def fetch_article_content(title, full_url, default_author="Unknown"):
-        try:
-            time.sleep(random.uniform(1.0, 2.0))
-            res = scraper.get(full_url, timeout=25)
-            res.raise_for_status()
-            soup = BeautifulSoup(res.text, "html.parser")
-            body = None
-            for sel in [".story__content", ".template-story__body",
-                        ".entry-body", "article .content", "article"]:
-                body = soup.select_one(sel)
-                if body:
-                    break
-            paragraphs = body.find_all("p") if body else soup.find_all("p")
-            content = " ".join(
-                p.get_text(strip=True) for p in paragraphs
-                if len(p.get_text(strip=True)) > 40
-            )
-            if len(content) < 300:
-                return None
-            author = default_author
-            for sel in [".byline__name", ".story__byline", ".author", "[rel='author']"]:
-                tag = soup.select_one(sel)
-                if tag:
-                    text = tag.get_text(strip=True)
-                    if text:
-                        author = text
-                        break
-            return {"title": title, "content": content, "author": author}
-        except Exception as e:
-            st.warning(f"Skipped: {title[:50]} — {e}")
-            return None
-
-    final_articles = []
-    seen_urls = set()
-
-    col_items = get_links_from_listing("https://www.dawn.com/newspaper/column", limit=8)
-    for title, url, author in col_items:
-        if len(final_articles) >= 4:
-            break
-        if url in seen_urls:
-            continue
-        seen_urls.add(url)
-        article = fetch_article_content(title, url, default_author=author)
-        if article:
-            final_articles.append(article)
-
-    ed_items = get_links_from_listing("https://www.dawn.com/newspaper/editorial", limit=5)
-    for title, url, author in ed_items:
-        if len(final_articles) >= 6:
-            break
-        if url in seen_urls:
-            continue
-        seen_urls.add(url)
-        article = fetch_article_content(title, url, default_author="Editorial")
-        if article:
-            if article["author"] == "Unknown":
-                article["author"] = "Editorial"
-            final_articles.append(article)
-
-    return final_articles
-
-
-def scrape_from_urls(urls_text):
-    """
-    Fallback: scrape articles from user-pasted Dawn URLs.
-    One URL per line.
-    """
-    try:
-        import cloudscraper
-        scraper = cloudscraper.create_scraper(
-            browser={"browser": "chrome", "platform": "windows", "mobile": False}
-        )
-    except Exception:
-        scraper = None
-
-    urls = [u.strip() for u in urls_text.strip().splitlines() if u.strip().startswith("http")]
     articles = []
-    for url in urls:
-        try:
-            time.sleep(random.uniform(0.5, 1.5))
-            res = (scraper.get(url, timeout=25) if scraper
-                   else requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=20))
-            res.raise_for_status()
-            soup = BeautifulSoup(res.text, "html.parser")
-            body = None
-            for sel in [".story__content", ".template-story__body", "article"]:
-                body = soup.select_one(sel)
-                if body:
-                    break
-            paragraphs = body.find_all("p") if body else soup.find_all("p")
-            content = " ".join(p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 40)
-            if len(content) < 200:
-                st.warning(f"Too short, skipped: {url}")
-                continue
-            title_tag = soup.find("h1") or soup.find("h2")
-            title = title_tag.get_text(strip=True) if title_tag else url
-            author = "Unknown"
-            for sel in [".byline__name", ".story__byline", ".author"]:
-                tag = soup.select_one(sel)
-                if tag:
-                    author = tag.get_text(strip=True)
-                    break
-            articles.append({"title": title, "content": content, "author": author})
-        except Exception as e:
-            st.warning(f"Could not fetch {url}: {e}")
+    # Split by === delimiter
+    blocks = [b.strip() for b in raw_text.strip().split("===") if b.strip()]
+    for block in blocks:
+        lines = block.strip().splitlines()
+        title = "Untitled"
+        author = "Unknown"
+        body_lines = []
+        body_started = False
+        for line in lines:
+            if line.startswith("TITLE:"):
+                title = line.replace("TITLE:", "").strip()
+            elif line.startswith("AUTHOR:"):
+                author = line.replace("AUTHOR:", "").strip()
+            elif line.strip() == "---":
+                body_started = True
+            elif body_started:
+                body_lines.append(line)
+            elif not body_started and not line.startswith("TITLE:") and not line.startswith("AUTHOR:"):
+                body_lines.append(line)
+        content = " ".join(body_lines).strip()
+        if len(content) > 100:
+            articles.append({"title": title, "author": author, "content": content})
     return articles
 
 
@@ -747,47 +627,115 @@ def generate_capsule_pdf():
 tab1, tab2, tab3 = st.tabs(["Fetch Opinions", "Generate Notes", "Daily Learning Capsule"])
 
 with tab1:
+    st.markdown("### Load Today's Dawn Articles")
 
-    # Auto-fetch
-    if st.button("Fetch Today's Opinions (Auto)"):
-        with st.spinner("Fetching from Dawn..."):
-            st.session_state["articles"] = scrape_opinions()
-        if not st.session_state["articles"]:
-            st.warning("Auto-fetch failed. Use Manual URL Input below.")
-        else:
-            st.success(f"Fetched {len(st.session_state['articles'])} articles")
+    method = st.radio("Choose method:", ["Paste URLs", "Paste Article Text"], horizontal=True)
 
-    st.divider()
-
-    # Manual URL fallback
-    with st.expander("Manual URL Input (use if auto-fetch fails)"):
-        st.markdown(
-            "Go to [dawn.com/newspaper/column](https://www.dawn.com/newspaper/column) "
-            "and [dawn.com/newspaper/editorial](https://www.dawn.com/newspaper/editorial), "
-            "copy article URLs and paste below — one per line."
+    if method == "Paste URLs":
+        st.info(
+            "1. Open [dawn.com/newspaper/column](https://www.dawn.com/newspaper/column) in your browser\n"
+            "2. Right-click each article title → Copy Link\n"
+            "3. Paste the links below, one per line"
         )
-        urls_input = st.text_area("Paste Dawn article URLs here", height=150,
-                                  placeholder="https://www.dawn.com/news/1234567")
-        if st.button("Load from URLs"):
-            if urls_input.strip():
-                with st.spinner("Fetching articles..."):
-                    st.session_state["articles"] = scrape_from_urls(urls_input)
-                if st.session_state["articles"]:
-                    st.success(f"Loaded {len(st.session_state['articles'])} articles")
-                else:
-                    st.error("Could not load any articles from those URLs.")
-            else:
+        urls_input = st.text_area(
+            "Paste Dawn article URLs (one per line)",
+            height=180,
+            placeholder="https://www.dawn.com/news/1234567\nhttps://www.dawn.com/news/7654321"
+        )
+        if st.button("Fetch from URLs"):
+            urls = [u.strip() for u in urls_input.strip().splitlines() if u.strip().startswith("http")]
+            if not urls:
                 st.warning("Please paste at least one URL.")
+            else:
+                articles = []
+                prog = st.progress(0)
+                for idx, url in enumerate(urls):
+                    with st.spinner(f"Fetching {idx+1}/{len(urls)}..."):
+                        try:
+                            import cloudscraper
+                            scraper = cloudscraper.create_scraper(browser={"browser":"chrome","platform":"windows","mobile":False})
+                            res = scraper.get(url, timeout=25)
+                        except Exception:
+                            import requests as req
+                            res = req.get(url, headers={"User-Agent":"Mozilla/5.0"}, timeout=20)
+                        if res.status_code == 200:
+                            from bs4 import BeautifulSoup as BS
+                            soup = BS(res.text, "html.parser")
+                            body = None
+                            for sel in [".story__content",".template-story__body","article"]:
+                                body = soup.select_one(sel)
+                                if body: break
+                            paras = body.find_all("p") if body else soup.find_all("p")
+                            content = " ".join(p.get_text(strip=True) for p in paras if len(p.get_text(strip=True))>40)
+                            title_tag = soup.find("h1") or soup.find("h2")
+                            title = title_tag.get_text(strip=True) if title_tag else url
+                            author = "Unknown"
+                            for sel in [".byline__name",".story__byline",".author"]:
+                                t = soup.select_one(sel)
+                                if t: author = t.get_text(strip=True); break
+                            if len(content) > 200:
+                                articles.append({"title":title,"content":content,"author":author})
+                                st.success(f"✅ {title[:60]}")
+                            else:
+                                st.warning(f"Too short, skipped: {url}")
+                        else:
+                            st.error(f"❌ {res.status_code} for {url}")
+                    prog.progress((idx+1)/len(urls))
+                if articles:
+                    st.session_state["articles"] = articles
+                    for i in range(len(articles)):
+                        st.session_state[f"article_{i}"] = True
+                    st.success(f"Loaded {len(articles)} article(s) — go to Tab 2 to generate notes")
+                else:
+                    st.error("No articles loaded.")
+
+    else:
+        st.info(
+            "1. Open any Dawn article in your browser\n"
+            "2. Select all text **(Ctrl+A)** → Copy **(Ctrl+C)**\n"
+            "3. Paste below\n"
+            "4. For multiple articles, separate them with a line containing only: **===**"
+        )
+        raw_input = st.text_area(
+            "Paste article text here",
+            height=300,
+            placeholder="Paste full article text here...\n===\nPaste second article here..."
+        )
+        if st.button("Load Pasted Text"):
+            if not raw_input.strip():
+                st.warning("Please paste some text first.")
+            else:
+                blocks = [b.strip() for b in raw_input.strip().split("===") if len(b.strip()) > 200]
+                articles = []
+                for block in blocks:
+                    lines = block.strip().splitlines()
+                    title = lines[0].strip() if lines else "Untitled"
+                    content = " ".join(l.strip() for l in lines[1:] if l.strip())
+                    author = "Unknown"
+                    for line in lines[1:6]:
+                        if line.strip() and len(line.strip()) < 50 and not line.strip()[0].isupper() == False:
+                            candidate = line.strip()
+                            if len(candidate.split()) <= 5:
+                                author = candidate
+                                break
+                    articles.append({"title": title, "content": content, "author": author})
+                if articles:
+                    st.session_state["articles"] = articles
+                    for i in range(len(articles)):
+                        st.session_state[f"article_{i}"] = True
+                    st.success(f"Loaded {len(articles)} article(s)")
+                else:
+                    st.error("Could not parse. Make sure text is at least 200 characters per article.")
 
     st.divider()
 
-    # Article selection
     if "articles" in st.session_state and st.session_state["articles"]:
         selected_articles = []
+        st.markdown(f"**{len(st.session_state['articles'])} article(s) loaded — select for notes:**")
         for i, art in enumerate(st.session_state["articles"]):
             key = f"article_{i}"
-            if st.checkbox(f"{art['title']} - {art['author']}", value=True, key=key):
-                st.write(art['content'][:400] + "...")
+            if st.checkbox(f"{art['title']} — {art['author']}", value=True, key=key):
+                st.caption(art['content'][:300] + "...")
                 selected_articles.append(art)
         st.session_state["selected_articles"] = selected_articles
 
