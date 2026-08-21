@@ -95,17 +95,16 @@ def fetch_article(title, url, default_author="Unknown"):
             print(f"  Skipped (too short: {len(content)} chars): {title[:50]}")
             return None
 
-        # Get author — Dawn article pages have .byline__name or similar
+        # Get author from <meta name="author"> — always present on Dawn article pages
         author = default_author
-        for sel in [".byline__name", ".story__byline span",
-                    ".author-name", "[rel='author']",
-                    ".byline", ".writer-name", "span.name"]:
-            t = soup.select_one(sel)
-            if t:
-                txt = t.get_text(strip=True)
-                if txt and 2 < len(txt) < 60:
-                    author = txt
-                    break
+        meta_author = soup.find("meta", attrs={"name": "author"})
+        if meta_author and meta_author.get("content", "").strip():
+            author = meta_author["content"].strip()
+        else:
+            # Fallback: author link in page body
+            author_link = soup.find("a", href=lambda h: h and "/authors/" in str(h))
+            if author_link:
+                author = author_link.get_text(strip=True)
 
         print(f"  ✓ '{title[:55]}' by {author} ({len(content)} chars)")
         return {"title": title, "content": content, "author": author}
