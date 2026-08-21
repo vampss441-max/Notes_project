@@ -1,7 +1,6 @@
 """
-GitHub Actions scraper — runs on GitHub servers (not Streamlit Cloud)
-Scrapes Dawn opinion + editorial articles, saves to articles.json in repo.
-Schedule: daily at 6 AM PKT (1 AM UTC)
+GitHub Actions scraper — runs on GitHub servers daily at 6 AM PKT
+Scrapes Dawn newspaper/column + newspaper/editorial, saves to articles.json
 """
 
 import requests
@@ -26,99 +25,137 @@ HEADERS = {
     "Cache-Control": "max-age=0",
 }
 
-def get_article_links(url, limit):
+
+def get_article_links(section_url, limit):
+    """
+    Get article links from Dawn newspaper listing page.
+    Targets <h2><a href="/news/..."> which is how Dawn lists articles.
+    """
     links = []
     seen = set()
+    print(f"\nFetching: {section_url}")
     try:
-        r = requests.get(url, headers=HEADERS, timeout=20)
+        r = requests.get(section_url, headers=HEADERS, timeout=20)
         r.raise_for_status()
+        print(f"  Status: {r.status_code}, Length: {len(r.text)}")
         soup = BeautifulSoup(r.text, "html.parser")
-        for a in soup.find_all("a", href=True):
+
+        # Dawn listing pages use <h2><a href="/news/XXXXX">Title</a></h2>
+        for h2 in soup.find_all("h2"):
+            a = h2.find("a", href=True)
+            if not a:
+                continue
             href = a["href"]
             if "/news/" not in href:
                 continue
-            full = href if href.startswith("http") else BASE + href
-            if full in seen:
+            full_url = href if href.startswith("http") else BASE + href
+            if full_url in seen:
                 continue
-            seen.add(full)
+            seen.add(full_url)
+
             title = a.get_text(strip=True)
-            if not title or len(title) < 8:
-                p = a.find_parent(["h2","h3","h4","div","article"])
-                if p:
-                    title = p.get_text(strip=True)[:120]
-            if not title or len(title) < 8:
+            if not title or len(title) < 5:
                 continue
-            author = "Unknown"
-            pb = a.find_parent(["article","div","li"])
-            if pb:
-                for t in pb.stripped_strings:
-                    t = t.strip()
-                    if t and t != title and len(t) < 50 and t[0].isupper():
-                        author = t
-                        break
-            links.append((title, full, author))
+
+            links.append((title, full_url))
+            print(f"  Found: {title[:60]} → {full_url}")
             if len(links) >= limit:
                 break
+
     except Exception as e:
-        print(f"Listing error {url}: {e}")
+        print(f"  ERROR: {e}")
+        raise
+
     return links
 
+
 def fetch_article(title, url, default_author="Unknown"):
+    """Fetch full article content + author from Dawn article page."""
     try:
-        time.sleep(random.uniform(1, 2))
+        time.sleep(random.uniform(1.5, 2.5))
         r = requests.get(url, headers=HEADERS, timeout=20)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
+
+        # Get article body
         body = None
-        for sel in [".story__content", ".template-story__body", ".entry-body", "article"]:
+        for sel in [".story__content", ".template-story__body",
+                    ".entry-body", "[itemprop='articleBody']", "article"]:
             body = soup.select_one(sel)
             if body:
                 break
+
         paras = body.find_all("p") if body else soup.find_all("p")
-        content = " ".join(p.get_text(strip=True) for p in paras if len(p.get_text(strip=True)) > 40)
+        content = " ".join(
+            p.get_text(strip=True) for p in paras
+            if len(p.get_text(strip=True)) > 40
+        )
+
         if len(content) < 300:
+            print(f"  Skipped (too short: {len(content)} chars): {title[:50]}")
             return None
+
+        # Get author — Dawn article pages have .byline__name or similar
         author = default_author
-        for sel in [".byline__name", ".story__byline", ".author", "[rel='author']"]:
+        for sel in [".byline__name", ".story__byline span",
+                    ".author-name", "[rel='author']",
+                    ".byline", ".writer-name", "span.name"]:
             t = soup.select_one(sel)
             if t:
                 txt = t.get_text(strip=True)
-                if txt:
+                if txt and 2 < len(txt) < 60:
                     author = txt
                     break
+
+        print(f"  ✓ '{title[:55]}' by {author} ({len(content)} chars)")
         return {"title": title, "content": content, "author": author}
+
     except Exception as e:
-        print(f"Article error {url}: {e}")
+        print(f"  ERROR fetching {url}: {e}")
         return None
 
+
+# ── Main ─────────────────────────────────────────────────────
 articles = []
 seen_urls = set()
 
-print("Scraping opinion columns...")
-for title, url, author in get_article_links(f"{BASE}/newspaper/column", 8):
+# 4 opinion columns
+print("=" * 50)
+print("SCRAPING OPINION COLUMNS")
+print("=" * 50)
+col_links = get_article_links(f"{BASE}/newspaper/column", limit=6)
+for title, url in col_links:
     if len(articles) >= 4:
         break
     if url in seen_urls:
         continue
     seen_urls.add(url)
-    a = fetch_article(title, url, author)
+    a = fetch_article(title, url, default_author="Unknown")
     if a:
         articles.append(a)
-        print(f"  ✓ {a['title'][:60]}")
 
-print("Scraping editorials...")
-for title, url, author in get_article_links(f"{BASE}/newspaper/editorial", 5):
+# 2 editorials
+print("=" * 50)
+print("SCRAPING EDITORIALS")
+print("=" * 50)
+ed_links = get_article_links(f"{BASE}/newspaper/editorial", limit=4)
+for title, url in ed_links:
     if len(articles) >= 6:
         break
     if url in seen_urls:
         continue
     seen_urls.add(url)
-    a = fetch_article(title, url, "Editorial")
+    a = fetch_article(title, url, default_author="Editorial")
     if a:
         if a["author"] == "Unknown":
             a["author"] = "Editorial"
         articles.append(a)
-        print(f"  ✓ {a['title'][:60]}")
+
+# ── Save ─────────────────────────────────────────────────────
+print("=" * 50)
+print(f"TOTAL: {len(articles)} articles")
+for i, a in enumerate(articles, 1):
+    print(f"  {i}. {a['title'][:60]} — {a['author']}")
 
 output = {
     "date": datetime.now().strftime("%d %B %Y"),
@@ -130,3 +167,7 @@ with open("articles.json", "w", encoding="utf-8") as f:
     json.dump(output, f, ensure_ascii=False, indent=2)
 
 print(f"\nSaved {len(articles)} articles to articles.json")
+
+if len(articles) < 4:
+    print(f"WARNING: Only {len(articles)} articles — expected 6")
+    exit(1)
