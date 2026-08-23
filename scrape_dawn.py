@@ -91,6 +91,12 @@ def fetch_article(title, url, default_author="Unknown"):
             if len(p.get_text(strip=True)) > 40
         )
 
+        # Clean encoding artifacts — Dawn sometimes has soft hyphens, zero-width
+        # spaces, and other Unicode junk that shows as corrupt chars in PDFs
+        for bad_char in ["\u00ad", "\u200b", "\u200c", "\u200d", "\ufeff", "\u2028", "\u2029"]:
+            content = content.replace(bad_char, "")
+        content = "".join(c for c in content if c.isprintable() or c in ("\n", "\t"))
+
         if len(content) < 300:
             print(f"  Skipped (too short: {len(content)} chars): {title[:50]}")
             return None
