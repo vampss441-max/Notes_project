@@ -41,7 +41,7 @@ if not api_key:
     st.stop()
 
 client = Groq(api_key=api_key)
-FAST_MODEL = "openai/gpt-oss-20b"
+FAST_MODEL = "llama-3.1-8b-instant"
 
 # =========================
 # SCRAPER — reads articles.json from GitHub (scraped daily by GitHub Actions)
@@ -50,7 +50,7 @@ FAST_MODEL = "openai/gpt-oss-20b"
 # =========================
 
 # ⚠️ CHANGE THIS to your actual GitHub username and repo name
-GITHUB_USER = "vampss441-max"
+GITHUB_USER = "your-github-username"
 GITHUB_REPO = "notes_project"
 GITHUB_BRANCH = "main"
 
@@ -664,14 +664,21 @@ with tab2:
 
             for idx, art in enumerate(st.session_state["selected_articles"]):
                 with st.spinner(f"Generating notes {idx+1}/{total}: {art['title'][:60]}..."):
-                    notes = generate_css_notes(art, mode)
-                    results.append({
-                        "title": art["title"],
-                        "notes": notes,
-                        "author": art["author"]
-                    })
+                    # Clean encoding artifacts before sending to AI
+                    clean_content = art["content"]
+                    for bad_char in ["\u00ad", "\u200b", "\u200c", "\u200d", "\ufeff"]:
+                        clean_content = clean_content.replace(bad_char, "")
+                    clean_art = {**art, "content": clean_content}
+                    notes = generate_css_notes(clean_art, mode)
+                    if not notes or len(notes.strip()) < 100:
+                        st.warning(f"Notes too short for '{art['title'][:50]}' — skipped")
+                    else:
+                        results.append({
+                            "title": art["title"],
+                            "notes": notes,
+                            "author": art["author"]
+                        })
                 progress.progress((idx + 1) / total)
-                # Pause between articles to avoid hitting Groq rate limits
                 if idx < total - 1:
                     time.sleep(15)
 
