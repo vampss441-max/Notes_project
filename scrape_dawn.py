@@ -85,17 +85,22 @@ def fetch_article(title, url, default_author="Unknown"):
             if body:
                 break
 
-        paras = body.find_all("p") if body else soup.find_all("p")
+        # Remove soft hyphens and zero-width characters from HTML BEFORE get_text()
+        # Dawn uses &shy; (soft hyphen) in compound words — it becomes \u00ad after parsing
+        # and renders as ■ in PDFs. Must strip from raw HTML first.
+        raw_html = str(body) if body else str(soup)
+        raw_html = raw_html.replace("&shy;", "").replace("\u00ad", "")
+        cleaned_soup = BeautifulSoup(raw_html, "html.parser")
+
+        paras = cleaned_soup.find_all("p")
         content = " ".join(
             p.get_text(strip=True) for p in paras
             if len(p.get_text(strip=True)) > 40
         )
 
-        # Clean encoding artifacts — Dawn sometimes has soft hyphens, zero-width
-        # spaces, and other Unicode junk that shows as corrupt chars in PDFs
-        for bad_char in ["\u00ad", "\u200b", "\u200c", "\u200d", "\ufeff", "\u2028", "\u2029"]:
+        # Final pass — strip any remaining invisible/control Unicode characters
+        for bad_char in ["\u200b", "\u200c", "\u200d", "\ufeff", "\u2028", "\u2029"]:
             content = content.replace(bad_char, "")
-        content = "".join(c for c in content if c.isprintable() or c in ("\n", "\t"))
 
         if len(content) < 300:
             print(f"  Skipped (too short: {len(content)} chars): {title[:50]}")
