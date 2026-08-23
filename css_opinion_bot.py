@@ -50,7 +50,7 @@ FAST_MODEL = "llama-3.1-8b-instant"
 # =========================
 
 # ⚠️ CHANGE THIS to your actual GitHub username and repo name
-GITHUB_USER = "your-github-username"
+GITHUB_USER = "vampss441-max"
 GITHUB_REPO = "notes_project"
 GITHUB_BRANCH = "main"
 
