@@ -680,7 +680,9 @@ with tab2:
                         })
                 progress.progress((idx + 1) / total)
                 if idx < total - 1:
-                    time.sleep(15)
+                    # Longer pause before last article to avoid rate limit cutoff
+                    wait = 30 if idx == total - 2 else 20
+                    time.sleep(wait)
 
             st.session_state["notes"] = results
             st.success("✅ Notes Generated")
