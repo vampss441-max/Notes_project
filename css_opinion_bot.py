@@ -41,7 +41,7 @@ if not api_key:
     st.stop()
 
 client = Groq(api_key=api_key)
-FAST_MODEL = "meta-llama/llama-prompt-guard-2-86m"
+FAST_MODEL = "llama-3.3-70b-versatile"
 
 # =========================
 # SCRAPER — reads articles.json from GitHub (scraped daily by GitHub Actions)
