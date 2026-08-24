@@ -41,7 +41,7 @@ if not api_key:
     st.stop()
 
 client = Groq(api_key=api_key)
-FAST_MODEL = "openai/gpt-oss-120b
+FAST_MODEL = "openai/gpt-oss-120b"
 "
 
 # =========================
