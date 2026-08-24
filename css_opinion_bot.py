@@ -42,8 +42,6 @@ if not api_key:
 
 client = Groq(api_key=api_key)
 FAST_MODEL = "openai/gpt-oss-120b"
-"
-
 # =========================
 # SCRAPER — reads articles.json from GitHub (scraped daily by GitHub Actions)
 # GitHub Actions runs scrape_dawn.py on GitHub servers at 6AM PKT
