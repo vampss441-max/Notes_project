@@ -49,7 +49,6 @@ FAST_MODEL = "openai/gpt-oss-120b"
 # Streamlit fetches the result via raw.githubusercontent.com (always accessible)
 # =========================
 
-
 GITHUB_USER = "Vampss441-max"
 GITHUB_REPO = "notes_project"
 GITHUB_BRANCH = "main"
@@ -503,7 +502,7 @@ def fetch_world_headlines():
     items = []
     failed = []
     cutoff = datetime.utcnow() - timedelta(hours=NEWS_MAX_AGE_HOURS)
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; DailyLearningCapsuleBot/1.0)"}
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; DailyCapsuleBot/1.0)"}
 
     for source, url in NEWS_FEEDS.items():
         try:
@@ -574,32 +573,54 @@ STRICT RULES:
 - Neutral tone. Facts only, no opinions.
 - Simple English. Each "what_happened" is 1-2 short sentences. "why_it_matters" is 1 short sentence.
 
-Return ONLY valid JSON, no markdown fences, no extra text, in exactly this shape:
-{{
-  "stories": [
-    {{
-      "emoji": "one relevant emoji",
-      "headline": "max 12 words",
-      "what_happened": "1-2 simple sentences",
-      "why_it_matters": "1 sentence",
-      "ids": [list of line ids supporting this story]
-    }}
-  ],
-  "takeaway": "2 short lines summarising the day"
-}}
+OUTPUT FORMAT (follow exactly, plain text, no markdown, no numbering, no extra commentary):
+
+STORY
+EMOJI: one relevant emoji
+HEADLINE: max 12 words
+WHAT: 1-2 simple sentences
+WHY: 1 short sentence
+IDS: comma-separated line ids supporting this story, e.g. 3, 7, 12
+END
+
+(Repeat STORY ... END for each of the 10 stories, then finish with:)
+
+TAKEAWAY: 2 short lines summarising the day
 
 HEADLINES:
 {headlines_block}
 """
 
 
-def parse_news_json(raw):
-    raw = raw.strip()
-    raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
-    start, end = raw.find("{"), raw.rfind("}")
-    if start == -1 or end == -1:
-        raise ValueError("No JSON found in model output")
-    return json.loads(raw[start:end + 1])
+def parse_news_text(raw):
+    """Tolerant parser for the STORY ... END text format. Returns {"stories": [...], "takeaway": str}"""
+    raw = raw.replace("**", "").replace("```", "")
+    stories = []
+
+    for block in re.findall(r"STORY\s*(.*?)\s*END", raw, flags=re.DOTALL | re.IGNORECASE):
+        def field(name):
+            m = re.search(rf"^\s*{name}\s*:\s*(.+)$", block, flags=re.MULTILINE | re.IGNORECASE)
+            return m.group(1).strip() if m else ""
+
+        ids = [int(x) for x in re.findall(r"\d+", field("IDS"))]
+        headline = field("HEADLINE")
+        if not headline:
+            continue
+        stories.append({
+            "emoji": field("EMOJI") or "📰",
+            "headline": headline,
+            "what_happened": field("WHAT"),
+            "why_it_matters": field("WHY"),
+            "ids": ids,
+        })
+
+    m = re.search(r"TAKEAWAY\s*:\s*(.+)", raw, flags=re.IGNORECASE | re.DOTALL)
+    takeaway = m.group(1).strip() if m else ""
+    takeaway = re.sub(r"\s*\n\s*", " ", takeaway)
+
+    if not stories:
+        raise ValueError("No stories found in model output")
+    return {"stories": stories, "takeaway": takeaway}
 
 
 def generate_world_news_post():
@@ -617,7 +638,8 @@ def generate_world_news_post():
     prompt = build_news_prompt(items, date_str)
 
     max_retries = 3
-    response = None
+    data = None
+    last_error = None
     for attempt in range(max_retries):
         try:
             response = client.chat.completions.create(
@@ -626,7 +648,10 @@ def generate_world_news_post():
                 temperature=0.2,
                 max_tokens=3000
             )
+            data = parse_news_text(response.choices[0].message.content)
             break
+        except ValueError as e:
+            last_error = e  # model output was malformed - just ask again
         except Exception as e:
             error_str = str(e).lower()
             if ("rate_limit" in error_str or "429" in error_str or "ratelimit" in error_str) and attempt < max_retries - 1:
@@ -636,7 +661,9 @@ def generate_world_news_post():
             else:
                 raise
 
-    data = parse_news_json(response.choices[0].message.content)
+    if data is None:
+        raise RuntimeError(f"The model's reply could not be read after {max_retries} tries ({last_error}). Please try again.")
+
     stories = data.get("stories", [])[:10]
     if not stories:
         raise RuntimeError("The model returned no stories. Please try again.")
