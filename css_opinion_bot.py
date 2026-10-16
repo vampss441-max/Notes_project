@@ -40,7 +40,7 @@ if not api_key:
     st.error("OpenAI API key missing in secrets")
     st.stop()
 
-client = OpenAI(api_key=api_key)
+client = OpenAI(api_key=api_key, base_url="https://api.groq.com/openai/v1")
 FAST_MODEL = "openai/gpt-oss-120b"
 
 # =========================
