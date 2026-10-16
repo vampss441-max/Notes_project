@@ -7,7 +7,7 @@ import requests
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
 import time
-from groq import Groq
+from openai import OpenAI
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, PageBreak,
     Image as RLImage, ListFlowable, ListItem, Table, TableStyle
@@ -35,21 +35,22 @@ file_date = datetime.now().strftime("%d-%m-%Y")
 st.set_page_config(page_title="Daily Opinions' Notes", layout="wide")
 st.title("🗞Dawn Opinion System")
 
-api_key = st.secrets["GROQ_API_KEY"]
+api_key = st.secrets["OPENAI_API_KEY"]
 if not api_key:
-    st.error("Groq API key missing in secrets")
+    st.error("OpenAI API key missing in secrets")
     st.stop()
 
-client = Groq(api_key=api_key)
+client = OpenAI(api_key=api_key)
 FAST_MODEL = "openai/gpt-oss-120b"
+
 # =========================
 # SCRAPER — reads articles.json from GitHub (scraped daily by GitHub Actions)
 # GitHub Actions runs scrape_dawn.py on GitHub servers at 6AM PKT
 # Streamlit fetches the result via raw.githubusercontent.com (always accessible)
 # =========================
 
-# ⚠️ CHANGE THIS to your actual GitHub username and repo name
-GITHUB_USER = "vampss441-max"
+
+GITHUB_USER = "Vampss441-max"
 GITHUB_REPO = "notes_project"
 GITHUB_BRANCH = "main"
 
@@ -85,7 +86,7 @@ ANALYTICAL_SENTENCES = [
 # =========================
 
 def generate_css_notes(article, mode):
-    structure = "Use short analytical paragraph followed by structured bullet points." if mode=="Bullet Dominant Hybrid" else "Use paragraph-dominant analysis with limited structured bullets."
+    structure = "Use short analytical paragraph followed by structured bullet points using the • symbol." if mode=="Bullet Dominant Hybrid" else "Use paragraph-dominant analysis with limited structured bullets using the • symbol."
 
     prompt = f"""
 You are a senior FPSC CSS examiner.
@@ -94,8 +95,9 @@ Create academy-style hybrid notes.
 
 STRICT RULES:
 - No hashtags
-- No markdown symbols
-- Clean headings
+- No markdown symbols like ** or __
+- Clean numbered headings only
+- Use the bullet point symbol • for all lists
 - Formal tone
 - {structure}
 - MUST include a section titled: Phrasal Verbs with Explanation
@@ -128,14 +130,15 @@ Article:
 {article['content'][:6000]}
 """
 
-    # Retry with exponential backoff to handle Groq rate limits
+    # Retry with exponential backoff to handle rate limits
     max_retries = 5
     for attempt in range(max_retries):
         try:
             response = client.chat.completions.create(
                 model=FAST_MODEL,
                 messages=[{"role": "user", "content": prompt}],
-                temperature=0.3
+                temperature=0.3,
+                max_tokens=4000
             )
             break  # success — exit retry loop
         except Exception as e:
@@ -143,15 +146,17 @@ Article:
             if "rate_limit" in error_str or "429" in error_str or "ratelimit" in error_str:
                 if attempt < max_retries - 1:
                     wait_time = 60 * (attempt + 1)  # 60s, 120s, 180s, 240s
-                    st.warning(f"⏳ Groq rate limit hit. Waiting {wait_time}s before retrying... (attempt {attempt+1}/{max_retries})")
+                    st.warning(f"⏳ Rate limit hit. Waiting {wait_time}s before retrying... (attempt {attempt+1}/{max_retries})")
                     time.sleep(wait_time)
                 else:
-                    st.error("❌ Groq rate limit exceeded after all retries. Please wait a few minutes and try again.")
+                    st.error("❌ Rate limit exceeded after all retries. Please wait a few minutes and try again.")
                     raise
             else:
                 raise  # non-rate-limit error — raise immediately
 
     notes_text = response.choices[0].message.content
+    # Strip ■ separator character used by openai/gpt-oss-20b model
+    notes_text = notes_text.replace("■", "-")
     cleaned_notes = "\n".join([line for line in notes_text.split("\n") if "Note: the phrasal verbs" not in line])
     return cleaned_notes
 
@@ -458,160 +463,229 @@ def generate_pdf(notes_data, font_theme="Classic Serif"):
     return buffer
 
 # =========================
-# DAILY LEARNING CAPSULE FUNCTIONS
+# DAILY TOP 10 WORLD NEWS (replaces Daily Learning Capsule)
+# Headlines are pulled live from reputable outlets' RSS feeds, so the AI can only
+# choose from real, current reports. Sources shown in the post are attached by
+# code (not written by the AI), so they can't be invented.
 # =========================
 
-from datetime import datetime
-import random
+import json
+import re
+from datetime import timedelta, timezone
+from email.utils import parsedate_to_datetime
 
-def learning_capsule():
+NEWS_FEEDS = {
+    "BBC News": "https://feeds.bbci.co.uk/news/world/rss.xml",
+    "Al Jazeera": "https://www.aljazeera.com/xml/rss/all.xml",
+    "The Guardian": "https://www.theguardian.com/world/rss",
+    "DW": "https://rss.dw.com/xml/rss-en-all",
+    "NYT": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+    "NPR": "https://feeds.npr.org/1004/rss.xml",
+    "France 24": "https://www.france24.com/en/rss",
+    "Dawn": "https://www.dawn.com/feeds/home",
+}
 
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    seed = random.randint(1000,9999)
+PAGE_NAME = "DailyCapsule"
+NEWS_MAX_AGE_HOURS = 36
+NEWS_ITEMS_PER_SOURCE = 8
 
-    prompt = f"""
-Create a Daily Learning Capsule for CSS competitive exam preparation.
 
-Date: {today}
-Seed: {seed}
+def _clean_text(html_text):
+    if not html_text:
+        return ""
+    text = BeautifulSoup(html_text, "html.parser").get_text(" ", strip=True)
+    return re.sub(r"\s+", " ", text)
+
+
+@st.cache_data(ttl=1800)  # cache for 30 minutes
+def fetch_world_headlines():
+    """Return (items, failed_sources). Each item: {id, source, title, summary, link}"""
+    items = []
+    failed = []
+    cutoff = datetime.utcnow() - timedelta(hours=NEWS_MAX_AGE_HOURS)
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; DailyLearningCapsuleBot/1.0)"}
+
+    for source, url in NEWS_FEEDS.items():
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+            r.raise_for_status()
+            root = ET.fromstring(r.content)
+            count = 0
+            for node in root.iter("item"):
+                title = _clean_text(node.findtext("title"))
+                link = (node.findtext("link") or "").strip()
+                summary = _clean_text(node.findtext("description"))[:160]
+                pub = node.findtext("pubDate")
+
+                if pub:
+                    try:
+                        pub_dt = parsedate_to_datetime(pub)
+                        if pub_dt.tzinfo is not None:
+                            pub_dt = pub_dt.astimezone(timezone.utc).replace(tzinfo=None)
+                        if pub_dt < cutoff:
+                            continue
+                    except Exception:
+                        pass  # keep item if date can't be parsed
+
+                if not title or not link:
+                    continue
+
+                items.append({
+                    "id": len(items) + 1,
+                    "source": source,
+                    "title": title,
+                    "summary": summary,
+                    "link": link,
+                })
+                count += 1
+                if count >= NEWS_ITEMS_PER_SOURCE:
+                    break
+            if count == 0:
+                failed.append(source)
+        except Exception:
+            failed.append(source)
+
+    return items, failed
+
+
+def build_news_prompt(items, date_str):
+    lines = [
+        f"[{it['id']}] {it['source']} | {it['title']} | {it['summary']}"
+        for it in items
+    ]
+    headlines_block = "\n".join(lines)
+
+    return f"""
+You are the news editor for the Facebook page "{PAGE_NAME}".
+Today's date is {date_str}.
+
+Below are real headlines published in the last 24-36 hours by reputable outlets.
+Each line is: [id] Outlet | Headline | Short summary
+
+TASK:
+Pick the 10 most important WORLD news stories from this list only.
 
 STRICT RULES:
-- Only provide the sections listed below
-- No introduction
-- No conclusion
-- End after Quote of the Day
-- Keep responses concise
-- Ensure today's capsule is DIFFERENT from typical textbook examples
-- Do not repeat the data again,try to generate new
+- Use ONLY the information in the lines below. Never add facts, numbers, names or quotes that are not in them.
+- Prefer stories reported by 2 or more different outlets. When several lines cover the same story, group their ids together.
+- Rank by global impact, not clickbait.
+- Give a balanced mix: politics, economy, science/technology, health, climate, conflicts/humanitarian. Include 1-2 stories from Pakistan or South Asia if available.
+- No celebrity gossip, rumours, or graphic details.
+- Neutral tone. Facts only, no opinions.
+- Simple English. Each "what_happened" is 1-2 short sentences. "why_it_matters" is 1 short sentence.
 
-Sections Format EXACTLY like this:
+Return ONLY valid JSON, no markdown fences, no extra text, in exactly this shape:
+{{
+  "stories": [
+    {{
+      "emoji": "one relevant emoji",
+      "headline": "max 12 words",
+      "what_happened": "1-2 simple sentences",
+      "why_it_matters": "1 sentence",
+      "ids": [list of line ids supporting this story]
+    }}
+  ],
+  "takeaway": "2 short lines summarising the day"
+}}
 
-Idiom of the Day
-Meaning:
-Example:
-
-Word of the Day
-Meaning:
-Example:
-
-Country Snapshot
-Country:
-Capital:
-Currency:
-
-Did You Know
-(one surprising global fact)
-
-Quote of the Day
-(one quote from a historical figure)
-
-Ensure all facts are globally verified and accurate.
+HEADLINES:
+{headlines_block}
 """
 
-    res = client.chat.completions.create(
-        model=FAST_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7
-    )
 
-    text = res.choices[0].message.content.strip()
-
-    if "Idiom of the Day" in text:
-        text = text[text.index("Idiom of the Day"):]
-
-    return text
-#Capsule Text
-def format_capsule_text(text):
-
-    lines = text.split("\n")
-    cleaned = []
-
-    for line in lines:
-
-        line = line.replace("**","").strip()
-
-        if not line:
-            cleaned.append("<br/>")
-            continue
-
-        if ":" in line:
-            parts = line.split(":",1)
-            line = f"<b>{parts[0]}</b>: {parts[1].strip()}"
-
-        cleaned.append(line)
-
-    return "<br/>".join(cleaned)
+def parse_news_json(raw):
+    raw = raw.strip()
+    raw = re.sub(r"^```(?:json)?|```$", "", raw, flags=re.MULTILINE).strip()
+    start, end = raw.find("{"), raw.rfind("}")
+    if start == -1 or end == -1:
+        raise ValueError("No JSON found in model output")
+    return json.loads(raw[start:end + 1])
 
 
-# =========================
-# CAPSULE CACHE
-# =========================
-def get_daily_capsule():
+def generate_world_news_post():
+    """Returns (post_text, verification_rows, warnings)"""
+    date_str = (datetime.utcnow() + timedelta(hours=5)).strftime("%d %B %Y")  # PKT
+    warnings = []
 
-    today_key = datetime.utcnow().strftime("%Y-%m-%d")
+    items, failed = fetch_world_headlines()
+    if failed:
+        warnings.append("Could not load: " + ", ".join(failed))
+    if len(items) < 10:
+        raise RuntimeError("Not enough live headlines could be loaded. Try again in a few minutes.")
 
-    if "capsule_cache" not in st.session_state:
-        st.session_state["capsule_cache"] = {}
+    by_id = {it["id"]: it for it in items}
+    prompt = build_news_prompt(items, date_str)
 
-    if today_key not in st.session_state["capsule_cache"]:
-        st.session_state["capsule_cache"][today_key] = learning_capsule()
+    max_retries = 3
+    response = None
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=FAST_MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.2,
+                max_tokens=3000
+            )
+            break
+        except Exception as e:
+            error_str = str(e).lower()
+            if ("rate_limit" in error_str or "429" in error_str or "ratelimit" in error_str) and attempt < max_retries - 1:
+                wait_time = 60 * (attempt + 1)
+                st.warning(f"⏳ Rate limit hit. Waiting {wait_time}s before retrying... (attempt {attempt+1}/{max_retries})")
+                time.sleep(wait_time)
+            else:
+                raise
 
-    return st.session_state["capsule_cache"][today_key]
-# =========================
-# CAPSULE PDF GENERATION
-# =========================
-def generate_capsule_pdf():
+    data = parse_news_json(response.choices[0].message.content)
+    stories = data.get("stories", [])[:10]
+    if not stories:
+        raise RuntimeError("The model returned no stories. Please try again.")
 
-    buffer = io.BytesIO()
+    post_lines = [f"🌍 Top 10 World News | {date_str}", ""]
+    verification = []
 
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=70,
-        leftMargin=70,
-        topMargin=80,
-        bottomMargin=60
-    )
+    for n, s in enumerate(stories, start=1):
+        ids = [i for i in s.get("ids", []) if isinstance(i, int) and i in by_id]
+        outlets = []
+        for i in ids:
+            if by_id[i]["source"] not in outlets:
+                outlets.append(by_id[i]["source"])
 
-    styles = getSampleStyleSheet()
+        if not outlets:
+            source_line = "Source: Not verified"
+        elif len(outlets) == 1:
+            source_line = f"Source: {outlets[0]} (single source)"
+        else:
+            source_line = "Source: " + ", ".join(outlets)
 
-    title_style = ParagraphStyle(
-        "Title",
-        parent=styles["Heading1"],
-        alignment=1,
-        fontSize=22,
-        spaceAfter=25
-    )
+        post_lines.append(f"{n}. {s.get('emoji', '📰')} {s.get('headline', '').strip()}")
+        post_lines.append(f"• What happened: {s.get('what_happened', '').strip()}")
+        post_lines.append(f"• Why it matters: {s.get('why_it_matters', '').strip()}")
+        post_lines.append(f"• {source_line}")
+        post_lines.append("")
 
-    body_style = ParagraphStyle(
-        "Body",
-        parent=styles["Normal"],
-        fontSize=13,
-        leading=20,
-        spaceAfter=12
-    )
+        for i in ids:
+            verification.append({
+                "story": n,
+                "source": by_id[i]["source"],
+                "title": by_id[i]["title"],
+                "link": by_id[i]["link"],
+            })
 
-    elements = []
+    takeaway = data.get("takeaway", "").strip()
+    if takeaway:
+        post_lines.append(f"💡 Quick Takeaway: {takeaway}")
+        post_lines.append("")
 
-    today = datetime.utcnow().strftime("%d %B %Y")
+    post_lines.append(f"Follow {PAGE_NAME} for daily learning and updates 📚")
+    post_lines.append("")
+    post_lines.append("#WorldNews #DailyNews #TopNews #Headlines #CurrentAffairs #DailyLearningCapsule")
 
-    elements.append(Paragraph("Daily Learning Capsule", title_style))
-    elements.append(Paragraph(today, body_style))
-    elements.append(Spacer(1,20))
+    return "\n".join(post_lines), verification, warnings
 
-    capsule = get_daily_capsule()
-    capsule_lines = format_capsule_text(capsule).split("<br/>")
-
-    for line in capsule_lines:
-        elements.append(Paragraph(line, body_style))
-
-    doc.build(elements)
-
-    buffer.seek(0)
-    return buffer
 
 #Streamlit ===== TAB 1 =====
-tab1, tab2, tab3 = st.tabs(["Fetch Opinions", "Generate Notes", "Daily Learning Capsule"])
+tab1, tab2, tab3 = st.tabs(["Fetch Opinions", "Generate Notes", "Daily Top 10 News"])
 
 with tab1:
     st.subheader("📰 Today's Dawn Opinion Articles")
@@ -714,12 +788,37 @@ if "notes" in st.session_state:
 
 # ===== TAB 3 =====
 with tab3:
-    st.subheader("📘 Daily Learning Capsule")
+    st.subheader("🌍 Daily Top 10 World News")
+    st.caption("Built from live headlines of BBC, Al Jazeera, Guardian, DW, NYT, NPR, France 24 and Dawn.")
 
-    if st.button("Generate Capsule"):
-        capsule = get_daily_capsule()
-        st.session_state["capsule_display"] = capsule
+    if st.button("Generate Top 10 News"):
+        with st.spinner("Collecting live headlines and writing your post..."):
+            try:
+                post, verification, warnings = generate_world_news_post()
+                st.session_state["news_post"] = post
+                st.session_state["news_verification"] = verification
+                st.session_state["news_warnings"] = warnings
+            except Exception as e:
+                st.session_state.pop("news_post", None)
+                st.error(f"Could not generate news: {e}")
 
-    if "capsule_display" in st.session_state:
-        capsule_text = format_capsule_text(st.session_state["capsule_display"])
-        st.markdown(capsule_text, unsafe_allow_html=True)
+    if "news_post" in st.session_state:
+        for w in st.session_state.get("news_warnings", []):
+            st.warning(w)
+
+        st.text_area(
+            "Facebook post (copy and paste)",
+            st.session_state["news_post"],
+            height=600
+        )
+
+        st.download_button(
+            "Download as .txt",
+            st.session_state["news_post"],
+            file_name=f"Top10_World_News_{file_date}.txt",
+            mime="text/plain"
+        )
+
+        with st.expander("🔎 Verification links (check before posting)"):
+            for row in st.session_state.get("news_verification", []):
+                st.markdown(f"**Story {row['story']}** — {row['source']}: [{row['title']}]({row['link']})")
