@@ -49,6 +49,7 @@ FAST_MODEL = "openai/gpt-oss-120b"
 # Streamlit fetches the result via raw.githubusercontent.com (always accessible)
 # =========================
 
+
 GITHUB_USER = "Vampss441-max"
 GITHUB_REPO = "notes_project"
 GITHUB_BRANCH = "main"
@@ -502,7 +503,7 @@ def fetch_world_headlines():
     items = []
     failed = []
     cutoff = datetime.utcnow() - timedelta(hours=NEWS_MAX_AGE_HOURS)
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; DailyCapsuleBot/1.0)"}
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; DailyLearningCapsuleBot/1.0)"}
 
     for source, url in NEWS_FEEDS.items():
         try:
@@ -562,7 +563,7 @@ Below are real headlines published in the last 24-36 hours by reputable outlets.
 Each line is: [id] Outlet | Headline | Short summary
 
 TASK:
-Pick the 10 most important WORLD news stories from this list only.
+Pick the 10 most important WORLD news stories from this list only. You MUST return exactly 10 stories.
 
 STRICT RULES:
 - Use ONLY the information in the lines below. Never add facts, numbers, names or quotes that are not in them.
@@ -570,16 +571,16 @@ STRICT RULES:
 - Rank by global impact, not clickbait.
 - Give a balanced mix: politics, economy, science/technology, health, climate, conflicts/humanitarian. Include 1-2 stories from Pakistan or South Asia if available.
 - No celebrity gossip, rumours, or graphic details.
-- Neutral tone. Facts only, no opinions.
-- Simple English. Each "what_happened" is 1-2 short sentences. "why_it_matters" is 1 short sentence.
+- Neutral tone. Facts only, no opinions.\n- Never write outlet names in WHAT or WHY (sources are added automatically).
+- Simple English. Each "what_happened" is 1-3 short sentences. "why_it_matters" is 1-2 short sentence.
 
 OUTPUT FORMAT (follow exactly, plain text, no markdown, no numbering, no extra commentary):
 
 STORY
 EMOJI: one relevant emoji
 HEADLINE: max 12 words
-WHAT: 1-2 simple sentences
-WHY: 1 short sentence
+WHAT: 1-3 simple sentences
+WHY: 1-2 short sentence
 IDS: comma-separated line ids supporting this story, e.g. 3, 7, 12
 END
 
@@ -597,10 +598,13 @@ def parse_news_text(raw):
     raw = raw.replace("**", "").replace("```", "")
     stories = []
 
-    for block in re.findall(r"STORY\s*(.*?)\s*END", raw, flags=re.DOTALL | re.IGNORECASE):
+    for block in re.findall(r"^[ \t]*STORY\b[^\n]*\n(.*?)^[ \t]*END\b[ \t]*$", raw, flags=re.DOTALL | re.MULTILINE | re.IGNORECASE):
         def field(name):
             m = re.search(rf"^\s*{name}\s*:\s*(.+)$", block, flags=re.MULTILINE | re.IGNORECASE)
             return m.group(1).strip() if m else ""
+
+        def no_outlets(t):
+            return re.sub(r"\s*\(?Reported by [^.)]*[.)]*", "", t, flags=re.IGNORECASE).strip()
 
         ids = [int(x) for x in re.findall(r"\d+", field("IDS"))]
         headline = field("HEADLINE")
@@ -609,8 +613,8 @@ def parse_news_text(raw):
         stories.append({
             "emoji": field("EMOJI") or "📰",
             "headline": headline,
-            "what_happened": field("WHAT"),
-            "why_it_matters": field("WHY"),
+            "what_happened": no_outlets(field("WHAT")),
+            "why_it_matters": no_outlets(field("WHY")),
             "ids": ids,
         })
 
@@ -668,6 +672,9 @@ def generate_world_news_post():
     if not stories:
         raise RuntimeError("The model returned no stories. Please try again.")
 
+    if len(stories) < 10:
+        warnings.append(f"The model returned only {len(stories)} stories. Click Generate again for a full 10.")
+
     post_lines = [f"🌍 Top 10 World News | {date_str}", ""]
     verification = []
 
@@ -678,17 +685,13 @@ def generate_world_news_post():
             if by_id[i]["source"] not in outlets:
                 outlets.append(by_id[i]["source"])
 
-        if not outlets:
-            source_line = "Source: Not verified"
-        elif len(outlets) == 1:
-            source_line = f"Source: {outlets[0]} (single source)"
-        else:
-            source_line = "Source: " + ", ".join(outlets)
+        # Sources are NOT written in the post. Single-source stories are flagged for you instead.
+        if len(outlets) < 2:
+            warnings.append(f"Story {n} has only one source - verify it before posting.")
 
         post_lines.append(f"{n}. {s.get('emoji', '📰')} {s.get('headline', '').strip()}")
         post_lines.append(f"• What happened: {s.get('what_happened', '').strip()}")
         post_lines.append(f"• Why it matters: {s.get('why_it_matters', '').strip()}")
-        post_lines.append(f"• {source_line}")
         post_lines.append("")
 
         for i in ids:
@@ -704,7 +707,7 @@ def generate_world_news_post():
         post_lines.append(f"💡 Quick Takeaway: {takeaway}")
         post_lines.append("")
 
-    post_lines.append(f"Follow {PAGE_NAME} for daily learning and updates 📚")
+    post_lines.append(f"Follow {PAGE_NAME} for DailyCapsule and updates 📚")
     post_lines.append("")
     post_lines.append("#WorldNews #DailyNews #TopNews #Headlines #CurrentAffairs #DailyLearningCapsule")
 
